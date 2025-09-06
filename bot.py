@@ -2722,12 +2722,17 @@ class ProductDetailsView(discord.ui.View):
         ))
 
 
+# --- PRODUCT AND PURCHASE VIEWS ---
 class ProductPostView(discord.ui.View):
+    """
+    This is the initial, public view for the product post.
+    It ONLY has the "More Details" button.
+    """
     def __init__(self, template_data: Dict, guild_id: int):
         super().__init__(timeout=None)
         self.template_data = template_data
         self.guild_id = guild_id
-
+    
     @discord.ui.button(label="More Details", style=discord.ButtonStyle.primary, emoji="ℹ️")
     async def more_details(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Get and validate the ticket panel URL
@@ -2776,15 +2781,11 @@ class ProductPostView(discord.ui.View):
             image=self.template_data.get('image_url')
         )
         
-        # Add pricing fields
-        prices = [p.strip() for p in self.template_data['price'].split('|')]
+        # Add pricing fields from the template data. This is where the magic happens.
+        prices = self.template_data.get('price_details', [])
         for price_info in prices:
-            parts = price_info.split(':', 1)
-            if len(parts) == 2:
-                detail_embed.add_field(name=parts[0].strip(), value=f"**{parts[1].strip()}**", inline=True)
-            else:
-                detail_embed.add_field(name="Price", value=f"**{price_info}**", inline=True)
-        
+            detail_embed.add_field(name=price_info['name'], value=f"**{price_info['value']}**", inline=True)
+
         # Add ticket panel status
         detail_embed.add_field(name="🎫 Ticket Panel Status", value=ticket_status, inline=False)
         
@@ -2792,8 +2793,8 @@ class ProductPostView(discord.ui.View):
         view = EnhancedProductDetailsView(ticket_url=ticket_url, guild=interaction.guild)
         
         await interaction.response.send_message(
-            embed=detail_embed, 
-            view=view, 
+            embed=detail_embed,
+            view=view,
             ephemeral=True
         )
     
@@ -2807,14 +2808,14 @@ class ProductPostView(discord.ui.View):
                 
                 try:
                     async for message in channel.history(limit=50):
-                        if (message.author == bot.user and 
-                            message.embeds and 
-                            message.components):
+                        if (message.author == bot.user and
+                                message.embeds and
+                                message.components):
                             
                             # Check if it looks like a ticket panel
                             embed = message.embeds[0]
-                            if ("ticket" in embed.title.lower() or 
-                                "support" in embed.title.lower()):
+                            if ("ticket" in embed.title.lower() or
+                                    "support" in embed.title.lower()):
                                 
                                 url = f"https://discord.com/channels/{guild.id}/{channel.id}/{message.id}"
                                 return url, channel
@@ -5545,23 +5546,33 @@ async def request_vouch(interaction: discord.Interaction, customer: discord.Memb
 @bot.tree.command(name="create_product_template", description="Create a reusable product embed template")
 @app_commands.describe(
     name="Template name",
-    title="Product title", 
+    title="Product title",
     description="Product description",
-    price="Product price",
+    prices="Product prices (e.g., '14 Days:9.99€|30 Days:14.99€')",
     features="Key features (separate with |)",
     image_url="Product image URL",
     stock_info="Stock information"
 )
 @app_commands.checks.has_permissions(administrator=True)
-async def create_product_template(interaction: discord.Interaction, name: str, title: str, description: str, price: str, features: str, image_url: str = None, stock_info: str = "Contact for availability"):
+async def create_product_template(interaction: discord.Interaction, name: str, title: str, description: str, prices: str, features: str, image_url: str = None, stock_info: str = "Contact for availability"):
     
     feature_list = [f.strip() for f in features.split('|') if f.strip()]
     features_text = "\n".join([f"✓ {feature}" for feature in feature_list])
     
+    # Parse prices into a list of dictionaries
+    price_details = []
+    for p in prices.split('|'):
+        parts = p.strip().split(':', 1)
+        if len(parts) == 2:
+            price_details.append({'name': parts[0].strip(), 'value': parts[1].strip()})
+        else:
+            price_details.append({'name': 'Price', 'value': p.strip()})
+
     template_data = {
         'title': title,
         'description': description,
-        'price': price,
+        'price': prices, # Keep original raw text for backward compatibility
+        'price_details': price_details, # New structured data for the detailed view
         'features': features_text,
         'image_url': image_url,
         'stock_info': stock_info,
@@ -5576,7 +5587,7 @@ async def create_product_template(interaction: discord.Interaction, name: str, t
     # Show preview
     preview_embed = create_embed(
         f"🛒 {title}",
-        f"{description}\n\n**💰 Price:** {price}\n\n**✨ Features:**\n{features_text}",
+        f"{description}\n\n**💰 Price:** {prices}\n\n**✨ Features:**\n{features_text}",
         CONFIG['MAIN_COLOR'],
         image=image_url,
         fields=[("📦 Stock", stock_info, True)]
@@ -6029,4 +6040,5 @@ if __name__ == "__main__":
             raise ValueError("DISCORD_TOKEN not found in environment variables.")
         bot.run(token)
     except Exception as e:
+
         logger.critical(f"CRITICAL: Failed to start bot - {e}")
