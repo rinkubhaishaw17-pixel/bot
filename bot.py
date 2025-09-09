@@ -1633,13 +1633,13 @@ def create_embed(title: str, description: str, color: Union[discord.Color, int] 
         title=title, 
         description=description, 
         color=color, 
-        # FIX: Changed to timezone.utc for consistency
         timestamp=datetime.now(timezone.utc)
     )
     
     if fields:
         for name, value, inline in fields:
-            embed.add_field(name=name, value=str(value)[:1024], inline=inline)
+            # Keep the original value without truncation for formatting
+            embed.add_field(name=name, value=str(value), inline=inline)
             
     if thumbnail:
         try:
@@ -2762,7 +2762,6 @@ class ProductPostView(discord.ui.View):
         self.template_data = template_data
         self.guild_id = guild_id
         
-        # Change button text to match your screenshot
         self.more_button = discord.ui.Button(
             label="Mehr Infos",
             style=discord.ButtonStyle.primary,
@@ -2776,58 +2775,30 @@ class ProductPostView(discord.ui.View):
         
         template = self.template_data
         
-        # Create the detailed embed with pricing grid
+        # Create detailed embed with proper formatting
         detail_embed = discord.Embed(
-            title=template['title'],
+            title=f"**{template['title']}**",
+            description=f"**{template.get('description', 'Product details below')}**",
             color=template.get('color', 0x2F3136)
         )
         
-        # Add features description
+        # Add features with proper formatting
         if template.get('features'):
-            features_text = template['features'].replace('✓', '•')
             detail_embed.add_field(
-                name="",
-                value=features_text,
+                name="**✨ Features:**",
+                value=template['features'],
                 inline=False
             )
         
-        # Parse and format prices as grid boxes
+        # Add pricing with code blocks
         if template.get('price'):
-            prices = [p.strip() for p in template['price'].split('|')]
-            
-            # Create price fields in grid layout (2 columns)
-            for i in range(0, len(prices), 2):
-                # First price in row
-                if i < len(prices) and ':' in prices[i]:
-                    duration1, cost1 = prices[i].split(':', 1)
-                    detail_embed.add_field(
-                        name=duration1.strip(),
-                        value=f"**{cost1.strip()}**",
-                        inline=True
-                    )
-                
-                # Second price in row
-                if i+1 < len(prices) and ':' in prices[i+1]:
-                    duration2, cost2 = prices[i+1].split(':', 1)
-                    # Check if it's not available
-                    if "not available" in cost2.lower():
-                        detail_embed.add_field(
-                            name=f"{duration2.strip()} (not available)",
-                            value="**-**",
-                            inline=True
-                        )
-                    else:
-                        detail_embed.add_field(
-                            name=duration2.strip(),
-                            value=f"**{cost2.strip()}**",
-                            inline=True
-                        )
-                
-                # Add invisible field for proper grid alignment
-                if i+1 < len(prices):
-                    detail_embed.add_field(name="\u200b", value="\u200b", inline=True)
+            detail_embed.add_field(
+                name="**💰 Pricing:**",
+                value=f"```{template['price']}```",
+                inline=False
+            )
         
-        # Add the GIF/image again
+        # Add image if exists
         if template.get('image_url'):
             detail_embed.set_image(url=template['image_url'])
         
@@ -2844,20 +2815,20 @@ class ProductPostView(discord.ui.View):
             message_id = ticket_config['ticket_message_id']
             ticket_url = f"https://discord.com/channels/{self.guild_id}/{channel_id}/{message_id}"
         
-        # Add buttons
+        # Add buttons with proper formatting
         if ticket_url:
             view.add_item(discord.ui.Button(
-                label="Ticket",
+                label="🎫 Create Ticket",
                 style=discord.ButtonStyle.link,
                 url=ticket_url,
                 emoji="🎫"
             ))
         
         view.add_item(discord.ui.Button(
-            label="Website",
+            label="🌐 Website",
             style=discord.ButtonStyle.link,
-            url="https://your-website.com",  # Change this to your website
-            emoji="🌐"
+            url="https://your-website.com",
+            emoji="🔗"
         ))
         
         await interaction.followup.send(embed=detail_embed, view=view, ephemeral=True)
@@ -5669,44 +5640,46 @@ async def post_product(interaction: discord.Interaction, template: str, channel:
     
     template_data = data_manager.data['templates'][template]
     
-    # Create SIMPLE main embed like your screenshot
-    product_embed = discord.Embed(
-        title=template_data['title'],
-        description="Drücke den Button für mehr Infos!" if not template_data.get('short_description') else template_data.get('short_description'),
-        color=template_data.get('color', 0x2F3136)
-    )
-    
-    # Add GIF/Image
-    if template_data.get('image_url'):
-        product_embed.set_image(url=template_data['image_url'])
-    
-    # That's it! Simple and clean like your screenshot
-    await channel.send(embed=product_embed, view=ProductPostView(template_data, interaction.guild.id))
-    
-    await interaction.response.send_message(f"✅ Product `{template}` posted in {channel.mention}", ephemeral=True)
-    
-    # Create the main product embed with exact styling
     product_embed = discord.Embed(
         title=f"**{template_data['title']}**",
-        description="Chair for RAGE:MP or Alt:V.",  # Short description only
-        color=template_data.get('color', 0x303136)  # Dark theme like screenshots
+        description=f"**{template_data.get('short_description', 'Drücke den Button für mehr Infos!')}**",
+        color=template_data.get('color', 0x303136)
     )
-    
-    # Format FEATURES as a field with markdown
+
+    # Format features with proper Discord formatting
     if template_data.get('features'):
-        features_text = "```\n"
-        # Parse features and format them
+        features_text = "**Product Features:**\n"
         feature_lines = template_data['features'].split('\n')
         for line in feature_lines:
-            # Remove existing checkmarks and re-add them consistently
             clean_line = line.replace('✓', '').replace('•', '').strip()
             if clean_line:
-                features_text += f"✓ {clean_line}\n"
-        features_text += "```"
-        
+                features_text += f"> **✓** {clean_line}\n"  # Use quote blocks for features
+
         product_embed.add_field(
-            name="**Product Features**",
+            name="\u200b",  # Zero-width space for better formatting
             value=features_text,
+            inline=False
+        )
+
+# Format pricing with code blocks for better readability
+    if template_data.get('price'):
+        prices = [p.strip() for p in template_data['price'].split('|')]
+        price_text = "**Pricing:**\n"
+
+        for price_info in prices:
+            if ':' in price_info:
+                duration, cost = price_info.split(':', 1)
+                duration = duration.strip()
+                cost = cost.strip()
+
+                if "not available" in cost.lower():
+                    price_text += f"> ~~`{duration}`~~ - ~~{cost}~~\n"
+                else:
+                    price_text += f"> `{duration}` - **{cost}**\n"
+
+        product_embed.add_field(
+            name="\u200b",
+            value=price_text,
             inline=False
         )
     
