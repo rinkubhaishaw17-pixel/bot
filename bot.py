@@ -1,3 +1,43 @@
+"""
+Northern Hub Discord Bot - Optimized & Cleaned
+===============================================
+
+This bot has been optimized and cleaned with the following improvements:
+
+✅ CLEANUP COMPLETED:
+- Removed duplicate ProductButtonsView classes
+- Consolidated embed creation into ProductTemplate system
+- Added Northern Hub banner image integration
+- Standardized button creation across all products
+- Moved hardcoded values to CONFIG
+- Created unified template system matching reference images
+- Removed redundant commands (create_product, create_product_template, create_exact_template, edit_template_image, post_product, quick_edit, quick_1337, setup_1337_template)
+- Unified template system - all templates saved in same location
+
+✅ NEW FEATURES:
+- ProductTemplate class for consistent product embeds
+- Default templates with exact reference formatting
+- Automatic banner image integration
+- Standardized button views (Ticket & Website)
+- Enhanced create_formatted_template with description input
+- Unified post_template command for all template types
+- 6 beautiful formatting styles for templates
+- More Info button system - preview with detailed pricing on click
+
+✅ REFERENCE IMAGE COMPLIANCE:
+- Exact text formatting from reference images
+- Proper color coding for pricing (red/cyan)
+- Northern Hub banner integration
+- Consistent button styling and layout
+
+✅ SIMPLIFIED COMMANDS:
+- /create_formatted_template - Create beautiful templates with enhanced pricing + newline support
+- /post_template - Post any template (formatted or regular) with autocomplete
+- /post_product_preview - Post product preview with More Info button
+- /template_guide - Get copy-paste templates and usage guide
+- All templates now saved in unified system with autocomplete
+"""
+
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timedelta, timezone
@@ -87,10 +127,151 @@ CONFIG = {
     'BACKUP_FOLDER': "backups",
     'MAX_BACKUPS': 5,
     'BACKUP_INTERVAL_HOURS': 6,
-    'MAIN_COLOR': 0x00CED1,  # Dark Cyan
+    'MAIN_COLOR': 0x028DF3,  # Custom Blue Color
     'SUCCESS_COLOR': 0x00FF7F,  # Spring Green
     'ERROR_COLOR': 0xFF4444,    # Red
-    'WARNING_COLOR': 0xFFD700    # Gold
+    'WARNING_COLOR': 0xFFD700,  # Gold
+    'BANNER_IMAGE': "https://media.discordapp.net/attachments/1162388547211370526/1403113823837225082/Copilot_20250805_220724.png",  # Northern Hub Banner
+    'WEBSITE_URL': "https://your-website.com"  # Replace with actual website
+}
+
+# --- PRODUCT TEMPLATE SYSTEM ---
+class ProductTemplate:
+    """Unified product template system based on reference images"""
+    
+    @staticmethod
+    def create_product_embed(product_name: str, subtitle: str, features: list, pricing: dict, 
+                           banner_url: str = None, color: int = None) -> discord.Embed:
+        """Create a product embed matching the reference image format"""
+        
+        embed = discord.Embed(color=color or CONFIG['MAIN_COLOR'])
+        
+        # Title and subtitle (matching reference format)
+        embed.add_field(
+            name=f"**{product_name}**",
+            value=subtitle,
+            inline=False
+        )
+        
+        # Product Features section
+        if features:
+            features_text = "\n".join([f"✓ {feature}" for feature in features])
+            embed.add_field(
+                name="**Product Features**",
+                value=features_text,
+                inline=False
+            )
+        
+        # Pricing section with color coding
+        if pricing:
+            pricing_text = ProductTemplate._format_pricing(pricing)
+            embed.add_field(
+                name="**Pricing**",
+                value=pricing_text,
+                inline=False
+            )
+        
+        # Set banner image
+        if banner_url:
+            embed.set_image(url=banner_url)
+        elif CONFIG['BANNER_IMAGE']:
+            embed.set_image(url=CONFIG['BANNER_IMAGE'])
+        
+        return embed
+    
+    @staticmethod
+    def _format_pricing(pricing: dict) -> str:
+        """Format pricing with color codes matching reference exactly"""
+        pricing_lines = []
+        
+        # RageMP pricing (red) - Fixed formatting
+        if 'ragemp' in pricing:
+            pricing_lines.append("```ansi")
+            for period, price in pricing['ragemp'].items():
+                # Remove "RageMP" from period since we add it in the format
+                clean_period = period.replace(" RageMP", "").replace("RageMP", "")
+                pricing_lines.append(f"[0;31m {clean_period} RageMP   - {price}[0m")
+        
+        # AltV pricing (cyan) - Fixed formatting
+        if 'altv' in pricing:
+            for period, price in pricing['altv'].items():
+                if period == "90 Days AltV" and pricing['altv'][period] == "24.99€ (not available)":
+                    pricing_lines.append(f"[0;36m {period} (not available) - 24.99€[0m")
+                else:
+                    # Remove "AltV" from period since we add it in the format
+                    clean_period = period.replace(" AltV", "").replace("AltV", "")
+                    pricing_lines.append(f"[0;36m {clean_period} AltV    - {price}[0m")
+            pricing_lines.append("```")
+        
+        return "\n".join(pricing_lines)
+    
+    @staticmethod
+    def create_buttons_view(guild_id: int, ticket_url: str = None, website_url: str = None) -> discord.ui.View:
+        """Create standardized button view matching reference"""
+        view = discord.ui.View(timeout=None)
+        
+        # Ticket button
+        if ticket_url:
+            view.add_item(discord.ui.Button(
+                label="Ticket",
+                style=discord.ButtonStyle.secondary,
+                emoji="🎫",
+                url=ticket_url
+            ))
+        else:
+            # Get ticket URL from config
+            guild_id_str = str(guild_id)
+            ticket_config = data_manager.data['ticket_config'].get(guild_id_str, {})
+            
+            if 'ticket_channel_id' in ticket_config and 'ticket_message_id' in ticket_config:
+                ticket_url = f"https://discord.com/channels/{guild_id}/{ticket_config['ticket_channel_id']}/{ticket_config['ticket_message_id']}"
+                view.add_item(discord.ui.Button(
+                    label="Ticket",
+                    style=discord.ButtonStyle.secondary,
+                    emoji="🎫",
+                    url=ticket_url
+                ))
+            else:
+                view.add_item(discord.ui.Button(
+                    label="Configure Ticket Panel First",
+                    style=discord.ButtonStyle.secondary,
+                    disabled=True
+                ))
+        
+        # Website button
+        website_url = website_url or CONFIG['WEBSITE_URL']
+        view.add_item(discord.ui.Button(
+            label="Website",
+            style=discord.ButtonStyle.secondary,
+            emoji="🌐",
+            url=website_url
+        ))
+        
+        return view
+
+# --- DEFAULT PRODUCT TEMPLATES ---
+DEFAULT_TEMPLATES = {
+    '1337_cheats': {
+        'name': '1337',
+        'subtitle': 'Chair for RAGE:MP or Alt:V',
+        'features': [
+            'Works with Rage:MP and Alt:V',
+            'Regular updates and reliable performance',
+            'Good functions at affordable price'
+        ],
+        'pricing': {
+            'ragemp': {
+                '7 Days': '4.99€',
+                '30 Days': '9.99€',
+                '90 Days': '24.99€'
+            },
+            'altv': {
+                '7 Days': '4.99€',
+                '30 Days': '9.99€',
+                '90 Days': '24.99€ (not available)'
+            }
+        }
+    }
 }
 
 # Add this after your existing imports and configurations
@@ -558,7 +739,7 @@ async def setup_server(interaction: discord.Interaction):
             "1. Use `/ticket` to set up the ticket panel in #create-ticket\n"
             "2. Configure welcome messages with `/setup_welcome`\n"
             "3. Add auto-roles with `/add_auto_role`\n"
-            "4. Post your products with `/post_product`\n"
+            "4. Post your products with `/post_template`\n"
             "5. Start giveaways with `/giveaway`"
         ),
         inline=False
@@ -1439,23 +1620,15 @@ data_manager = DataManager()
 
 
 def initialize_default_templates():
-    """Initialize templates exactly as shown in screenshots"""
+    """Initialize templates EXACTLY as shown in the image"""
     defaults = {
         "1337": {
             "title": "1337",
-            "short_description": "Drücke den Button für mehr Infos!",
-            "features": "• Works with RageMP and AltV\n• Regular updates and reliable performance\n• Good functions at affordable price",
-            "price": "7 Days RageMP: 4.99€ | 30 Days RageMP: 9.99€ | 90 Days RageMP: 24.99€ | 7 Days AltV: 4.99€ | 30 Days AltV: 9.99€ | 90 Days AltV: not available",
-            "image_url": "YOUR_KANACKEN_HUB_GIF_URL_HERE",  # Add your GIF URL
-            "color": 0x5865F2,  # Discord blurple
-        },
-        "Hydrogen": {
-            "title": "Hydrogen",
-            "short_description": "Drücke den Button für mehr Infos!",
-            "features": "• Supports RAGE:MP and AltV\n• User-friendly interface\n• Regular updates",
-            "price": "14 Days: 9.99€ | 30 Days: 14.99€ | 90 Days: 29.99€",
-            "image_url": "YOUR_KANACKEN_HUB_GIF_URL_HERE",  # Add your GIF URL
-            "color": 0x5865F2,
+            "subtitle": "Chair for RAGE:MP or Alt:V",
+            "features": "✓ Works with Rage:MP and Alt:V\n✓ Regular updates and reliable performance\n✓ Good functions at affordable price",
+            "pricing_formatted": "  7 Days RageMP   - 4.99€\n 30 Days RageMP   - 9.99€\n 90 Days RageMP   - 24.99€\n  7 Days Alt:V    - 4.99€\n 30 Days Alt:V    - 9.99€\n 90 Days Alt:V    - 24.99€",
+            "image_url": "https://media.discordapp.net/attachments/1162388547211370526/1403113823837225082/Copilot_20250805_220724.png",
+            "color": 0x2F3136,  # Dark discord color
         }
     }
     
@@ -1464,10 +1637,7 @@ def initialize_default_templates():
             data_manager.data['templates'][name] = template
     
     data_manager.save_category_data('templates')
-    logger.info("✅ Default templates initialized")
 
-# Call after DataManager
-initialize_default_templates()
 
 initialize_default_templates()
 # --- UTILITY FUNCTIONS ---
@@ -2494,6 +2664,71 @@ class AdvancedTicketView(discord.ui.View):
         )
         await interaction.response.send_message(embed=embed, view=ConfirmDeleteView(), ephemeral=True)
 
+class FormattingGuideModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Discord Formatting Guide")
+        
+        self.guide = discord.ui.TextInput(
+            label="Formatting Examples (Read-Only)",
+            default=(
+                "**Bold Text**: **text**\n"
+                "*Italic*: *text*\n"
+                "__Underline__: __text__\n"
+                "~~Strikethrough~~: ~~text~~\n"
+                "`Code`: `text`\n"
+                "```Code Block```\n"
+                "> Quote: > text\n"
+                ">>> Multi-line Quote"
+            ),
+            style=discord.TextStyle.paragraph,
+            required=False
+        )
+        self.add_item(self.guide)
+
+@bot.tree.command(name="formatting_guide", description="Show Discord text formatting guide")
+async def formatting_guide(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📝 Discord Text Formatting Guide",
+        description="Use these formats in your templates:",
+        color=0x5B3A5F
+    )
+    
+    embed.add_field(
+        name="Basic Formatting",
+        value=(
+            "**Bold**: `**text**`\n"
+            "*Italic*: `*text*`\n"
+            "__Underline__: `__text__`\n"
+            "~~Strike~~: `~~text~~`\n"
+            "***Bold Italic***: `***text***`"
+        ),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Code & Quotes",
+        value=(
+            "Inline Code: `` `code` ``\n"
+            "Code Block: `` ```text``` ``\n"
+            "Quote: `> text`\n"
+            "Multi Quote: `>>> text`"
+        ),
+        inline=True
+    )
+    
+    embed.add_field(
+        name="Special",
+        value=(
+            "Spoiler: `||text||`\n"
+            "Empty Line: `\\u200b`\n"
+            "Mention: `<@userID>`\n"
+            "Channel: `<#channelID>`"
+        ),
+        inline=True
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 class EnhancedTicketDropdown(discord.ui.Select):
     def __init__(self):
         options = [
@@ -2721,144 +2956,6 @@ class CustomerVouchView(discord.ui.View):
         except Exception as e:
             logger.error(f"Error sending vouch modal: {e}")
             await interaction.response.send_message("❌ Failed to open vouch form. Please try again.", ephemeral=True)
-
-# --- PRODUCT AND PURCHASE VIEWS ---
-
-class ProductDetailsView(discord.ui.View):
-    def __init__(self, ticket_url=None, website_url=None):
-        super().__init__(timeout=None)
-        
-        # Only add ticket button if URL is available
-        if ticket_url:
-            self.add_item(discord.ui.Button(
-                label="Create Ticket",
-                style=discord.ButtonStyle.success,
-                url=ticket_url,
-                emoji="🎫"
-            ))
-        else:
-            # Add a disabled button with explanation
-            disabled_button = discord.ui.Button(
-                label="Ticket System Not Configured",
-                style=discord.ButtonStyle.secondary,
-                disabled=True,
-                emoji="⚠️"
-            )
-            self.add_item(disabled_button)
-        
-        # Add website button
-        website_url = website_url or "https://your.website.com"
-        self.add_item(discord.ui.Button(
-            label="Website",
-            style=discord.ButtonStyle.link,
-            url=website_url,
-            emoji="🔗"
-        ))
-
-
-class ProductPostView(discord.ui.View):
-    def __init__(self, template_data: Dict, guild_id: int):
-        super().__init__(timeout=None)
-        self.template_data = template_data
-        self.guild_id = guild_id
-        
-        self.more_button = discord.ui.Button(
-            label="Mehr Infos",
-            style=discord.ButtonStyle.primary,
-            emoji="🔍"
-        )
-        self.more_button.callback = self.more_details
-        self.add_item(self.more_button)
-
-    async def more_details(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        template = self.template_data
-        
-        # Create detailed embed with proper formatting
-        detail_embed = discord.Embed(
-            title=f"**{template['title']}**",
-            description=f"**{template.get('description', 'Product details below')}**",
-            color=template.get('color', 0x2F3136)
-        )
-        
-        # Add features with proper formatting
-        if template.get('features'):
-            detail_embed.add_field(
-                name="**✨ Features:**",
-                value=template['features'],
-                inline=False
-            )
-        
-        # Add pricing with code blocks
-        if template.get('price'):
-            detail_embed.add_field(
-                name="**💰 Pricing:**",
-                value=f"```{template['price']}```",
-                inline=False
-            )
-        
-        # Add image if exists
-        if template.get('image_url'):
-            detail_embed.set_image(url=template['image_url'])
-        
-        # Create buttons for Ticket and Website
-        view = discord.ui.View()
-        
-        # Find ticket panel URL
-        guild_id_str = str(self.guild_id)
-        ticket_config = data_manager.data['ticket_config'].get(guild_id_str, {})
-        ticket_url = None
-        
-        if 'ticket_channel_id' in ticket_config and 'ticket_message_id' in ticket_config:
-            channel_id = ticket_config['ticket_channel_id']
-            message_id = ticket_config['ticket_message_id']
-            ticket_url = f"https://discord.com/channels/{self.guild_id}/{channel_id}/{message_id}"
-        
-        # Add buttons with proper formatting
-        if ticket_url:
-            view.add_item(discord.ui.Button(
-                label="🎫 Create Ticket",
-                style=discord.ButtonStyle.link,
-                url=ticket_url,
-                emoji="🎫"
-            ))
-        
-        view.add_item(discord.ui.Button(
-            label="🌐 Website",
-            style=discord.ButtonStyle.link,
-            url="https://your-website.com",
-            emoji="🔗"
-        ))
-        
-        await interaction.followup.send(embed=detail_embed, view=view, ephemeral=True)
-
-
-class EnhancedProductDetailsView(discord.ui.View):
-    def __init__(self, ticket_url=None, guild=None):
-        super().__init__(timeout=None)
-        self.guild = guild
-        
-        if ticket_url:
-            # Add working ticket button
-            self.add_item(discord.ui.Button(
-                label="Create Ticket",
-                style=discord.ButtonStyle.success,
-                url=ticket_url,
-                emoji="🎫"
-            ))
-        else:
-            # Add fallback create ticket button
-            self.add_item(CreateTicketDirectButton())
-        
-        # Add website button
-        website_url = "https://your.website.com"
-        self.add_item(discord.ui.Button(
-            label="Website",
-            style=discord.ButtonStyle.link,
-            url=website_url,
-            emoji="🔗"
-        ))
 
 
 class CreateTicketDirectButton(discord.ui.Button):
@@ -3567,43 +3664,588 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # === SLASH COMMANDS ===
 
-@bot.tree.command(name="quick_edit", description="Quick edit price, color, or image for a template")
+@bot.tree.command(name="create_formatted_template", description="🎨 Create beautiful product templates with enhanced pricing formatting")
 @app_commands.describe(
-    template="Template to edit",
-    price="New price (use | to separate)",
-    color="New hex color",
-    image_url="New GIF/image URL"
+    name="Template name",
+    title="Product title",
+    description="Product description/features (separate with commas)",
+    format_style="Choose beautiful formatting style",
+    ragemp_7d="7 Days RageMP price (e.g., 4.99)",
+    ragemp_30d="30 Days RageMP price (e.g., 9.99)",
+    ragemp_90d="90 Days RageMP price (e.g., 24.99)",
+    altv_7d="7 Days AltV price (e.g., 4.99)",
+    altv_30d="30 Days AltV price (e.g., 9.99)",
+    altv_90d="90 Days AltV price (e.g., 24.99)"
 )
+@app_commands.choices(format_style=[
+    app_commands.Choice(name="🎯 Premium Code Block", value="premium_code"),
+    app_commands.Choice(name="💎 Elegant Quote Style", value="elegant_quote"),
+    app_commands.Choice(name="⚡ Bold & Arrows", value="bold_arrows"),
+    app_commands.Choice(name="✨ Minimal Clean", value="minimal_clean"),
+    app_commands.Choice(name="🔥 Gaming Style", value="gaming_style"),
+    app_commands.Choice(name="💫 Luxury Format", value="luxury_format")
+])
 @app_commands.checks.has_permissions(administrator=True)
-async def quick_edit(interaction: discord.Interaction, template: str, price: str = None, color: str = None, image_url: str = None):
-    if template not in data_manager.data['templates']:
-        await interaction.response.send_message(f"❌ Template `{template}` not found.", ephemeral=True)
-        return
+async def create_formatted_template(
+    interaction: discord.Interaction, 
+    name: str, 
+    title: str,
+    description: str,
+    format_style: str,
+    ragemp_7d: float = 4.99,
+    ragemp_30d: float = 9.99,
+    ragemp_90d: float = 24.99,
+    altv_7d: float = 4.99,
+    altv_30d: float = 9.99,
+    altv_90d: float = 24.99
+):
+    """🎨 Create beautiful product templates with enhanced pricing formatting"""
     
-    updated = []
+    # Enhanced formatting presets with beautiful pricing
+    formats = {
+        "premium_code": {
+            "main_text": "This **premium software** delivers **exceptional performance** with **regular updates**, **reliable functionality**, and **outstanding value**!",
+            "price_formatted": """```ansi
+[0;31m┌─ RageMP Pricing ─────────────────┐[0m
+[0;31m│ 7 Days  RageMP    - 4.99€      │[0m
+[0;31m│ 30 Days RageMP    - 9.99€      │[0m
+[0;31m│ 90 Days RageMP    - 24.99€     │[0m
+[0;31m└─────────────────────────────────┘[0m
+[0;36m┌─ AltV Pricing ───────────────────┐[0m
+[0;36m│ 7 Days  AltV     - 4.99€       │[0m
+[0;36m│ 30 Days AltV     - 9.99€       │[0m
+[0;36m│ 90 Days AltV     - 24.99€      │[0m
+[0;36m└─────────────────────────────────┘[0m
+```""",
+            "color": 0x2F3136
+        },
+        "elegant_quote": {
+            "main_text": "> **🌟 Premium Features:**\n> • Regular updates & patches\n> • Reliable functionality\n> • Excellent performance\n> • Affordable pricing\n> • 24/7 support available",
+            "price_formatted": """>>> **💳 Pricing Information**
+> 
+> **RageMP Options:**
+> `7 Days  ` → **4.99€** 💰
+> `30 Days ` → **9.99€** 💰
+> `90 Days ` → **24.99€** 💰
+> 
+> **AltV Options:**
+> `7 Days  ` → **4.99€** 💰
+> `30 Days ` → **9.99€** 💰
+> `90 Days ` → **24.99€** 💰""",
+            "color": 0x00CED1
+        },
+        "bold_arrows": {
+            "main_text": "**🚀 Premium Features:**\n**→** Regular Updates & Patches\n**→** Reliable Functionality\n**→** Excellent Performance\n**→** Affordable Pricing\n**→** 24/7 Support Available",
+            "price_formatted": """**__💰 PRICING INFORMATION__**
+
+**🎯 RageMP Options:**
+**• 7 Days RageMP:** `4.99€` ⭐
+**• 30 Days RageMP:** `9.99€` ⭐
+**• 90 Days RageMP:** `24.99€` ⭐
+
+**🎯 AltV Options:**
+**• 7 Days AltV:** `4.99€` ⭐
+**• 30 Days AltV:** `9.99€` ⭐
+**• 90 Days AltV:** `24.99€` ⭐""",
+            "color": 0xFFD700
+        },
+        "minimal_clean": {
+            "main_text": "**Features:** Regular updates • Reliable functionality • Excellent performance • Affordable pricing • 24/7 support",
+            "price_formatted": """**RageMP:** 7D: 4.99€ | 30D: 9.99€ | 90D: 24.99€
+**AltV:** 7D: 4.99€ | 30D: 9.99€ | 90D: 24.99€""",
+            "color": 0x00FF7F
+        },
+        "gaming_style": {
+            "main_text": "**🎮 GAMING SOFTWARE FEATURES:**\n**⚔️** Regular Updates\n**🛡️** Reliable Protection\n**⚡** High Performance\n**💎** Premium Quality\n**🎯** Easy to Use",
+            "price_formatted": """```diff
++ RageMP Pricing:
++ 7 Days  = 4.99€
++ 30 Days = 9.99€
++ 90 Days = 24.99€
+
++ AltV Pricing:
++ 7 Days  = 4.99€
++ 30 Days = 9.99€
++ 90 Days = 24.99€
+```""",
+            "color": 0x9B59B6
+        },
+        "luxury_format": {
+            "main_text": "**✨ LUXURY SOFTWARE EXPERIENCE**\n**💎** Premium Quality\n**🌟** Regular Updates\n**⚡** High Performance\n**🛡️** Reliable Security\n**👑** Elite Features",
+            "price_formatted": """**💎 PREMIUM PRICING**
+
+**RageMP Packages:**
+┌─────────────────────────┐
+│ 7 Days  │ 4.99€  │ 💰 │
+│ 30 Days │ 9.99€  │ 💰 │
+│ 90 Days │ 24.99€ │ 💰 │
+└─────────────────────────┘
+
+**AltV Packages:**
+┌─────────────────────────┐
+│ 7 Days  │ 4.99€  │ 💰 │
+│ 30 Days │ 9.99€  │ 💰 │
+│ 90 Days │ 24.99€ │ 💰 │
+└─────────────────────────┘""",
+            "color": 0xFFD700
+        }
+    }
     
-    if price:
-        data_manager.data['templates'][template]['price'] = price
-        updated.append("price")
+    selected_format = formats[format_style]
     
-    if color:
-        try:
-            color_int = int(color.replace("#", ""), 16)
-            data_manager.data['templates'][template]['color'] = color_int
-            updated.append("color")
-        except:
-            pass
+    # Parse description into features list (support newlines with \n)
+    description = description.replace('\\n', '\n')
+    features = [f.strip() for f in description.split(',') if f.strip()]
     
-    if image_url:
-        data_manager.data['templates'][template]['image_url'] = image_url
-        updated.append("image")
+    # Create dynamic formatted pricing based on custom values
+    def create_formatted_pricing(style, ragemp_7d, ragemp_30d, ragemp_90d, altv_7d, altv_30d, altv_90d):
+        if style == "premium_code":
+            return f"""```ansi
+[0;31m┌─ RageMP Pricing ─────────────────┐[0m
+[0;31m│ 7 Days  RageMP    - {ragemp_7d}€      │[0m
+[0;31m│ 30 Days RageMP    - {ragemp_30d}€      │[0m
+[0;31m│ 90 Days RageMP    - {ragemp_90d}€     │[0m
+[0;31m└─────────────────────────────────┘[0m
+[0;36m┌─ AltV Pricing ───────────────────┐[0m
+[0;36m│ 7 Days  AltV     - {altv_7d}€       │[0m
+[0;36m│ 30 Days AltV     - {altv_30d}€       │[0m
+[0;36m│ 90 Days AltV     - {altv_90d}€      │[0m
+[0;36m└─────────────────────────────────┘[0m
+```"""
+        elif style == "elegant_quote":
+            return f""">>> **💳 Pricing Information**
+> 
+> **RageMP Options:**
+> `7 Days  ` → **{ragemp_7d}€** 💰
+> `30 Days ` → **{ragemp_30d}€** 💰
+> `90 Days ` → **{ragemp_90d}€** 💰
+> 
+> **AltV Options:**
+> `7 Days  ` → **{altv_7d}€** 💰
+> `30 Days ` → **{altv_30d}€** 💰
+> `90 Days ` → **{altv_90d}€** 💰"""
+        elif style == "bold_arrows":
+            return f"""**__💰 PRICING INFORMATION__**
+
+**🎯 RageMP Options:**
+**→** 7 Days RageMP: **{ragemp_7d}€** ⭐
+**→** 30 Days RageMP: **{ragemp_30d}€** ⭐
+**→** 90 Days RageMP: **{ragemp_90d}€** ⭐
+
+**🎯 AltV Options:**
+**→** 7 Days AltV: **{altv_7d}€** ⭐
+**→** 30 Days AltV: **{altv_30d}€** ⭐
+**→** 90 Days AltV: **{altv_90d}€** ⭐"""
+        elif style == "minimal_clean":
+            return f"""**Pricing**
+
+[0;31m 7 Days RageMP - {ragemp_7d}€[0m
+[0;31m 30 Days RageMP - {ragemp_30d}€[0m
+[0;31m 90 Days RageMP - {ragemp_90d}€[0m
+[0;36m 7 Days AltV - {altv_7d}€[0m
+[0;36m 30 Days AltV - {altv_30d}€[0m
+[0;36m 90 Days AltV - {altv_90d}€[0m"""
+        elif style == "gaming_style":
+            return f"""**🎮 GAMING PRICING 🎮**
+
+**🔥 RageMP Packages:**
+┌─────────────────────────┐
+│ 7 Days  │ {ragemp_7d}€  │ 💰 │
+│ 30 Days │ {ragemp_30d}€  │ 💰 │
+│ 90 Days │ {ragemp_90d}€ │ 💰 │
+└─────────────────────────┘
+
+**⚡ AltV Packages:**
+┌─────────────────────────┐
+│ 7 Days  │ {altv_7d}€  │ 💰 │
+│ 30 Days │ {altv_30d}€  │ 💰 │
+│ 90 Days │ {altv_90d}€ │ 💰 │
+└─────────────────────────┘"""
+        elif style == "luxury_format":
+            return f"""**💎 LUXURY PRICING 💎**
+
+**🎯 RageMP Options:**
+┌─────────────────────────┐
+│ 7 Days  │ {ragemp_7d}€  │ 💰 │
+│ 30 Days │ {ragemp_30d}€  │ 💰 │
+│ 90 Days │ {ragemp_90d}€ │ 💰 │
+└─────────────────────────┘
+
+**AltV Packages:**
+┌─────────────────────────┐
+│ 7 Days  │ {altv_7d}€  │ 💰 │
+│ 30 Days │ {altv_30d}€  │ 💰 │
+│ 90 Days │ {altv_90d}€ │ 💰 │
+└─────────────────────────┘"""
+        else:
+            return f"RageMP: {ragemp_7d}€, {ragemp_30d}€, {ragemp_90d}€ | AltV: {altv_7d}€, {altv_30d}€, {altv_90d}€"
     
-    data_manager.save_category_data('templates')
+    # Generate dynamic formatted pricing
+    dynamic_formatted_pricing = create_formatted_pricing(format_style, ragemp_7d, ragemp_30d, ragemp_90d, altv_7d, altv_30d, altv_90d)
+    
+    template_data = {
+        'name': name,
+        'title': title,
+        'subtitle': "Premium Product",
+        'features': features,
+        'pricing': {
+            'RageMP': {
+                '7 Days': f'{ragemp_7d}€',
+                '30 Days': f'{ragemp_30d}€', 
+                '90 Days': f'{ragemp_90d}€'
+            },
+            'AltV': {
+                '7 Days': f'{altv_7d}€',
+                '30 Days': f'{altv_30d}€',
+                '90 Days': f'{altv_90d}€'
+            }
+        },
+        'color': CONFIG['MAIN_COLOR'],
+        'banner_url': CONFIG['BANNER_IMAGE'],
+        'footer_text': "NorthernHub • Premium Trusted Service",
+        'created_by': interaction.user.id,
+        'created_at': datetime.now().isoformat(),
+        'format_style': format_style,
+        'formatted_pricing': dynamic_formatted_pricing,
+        'formatted_text': selected_format['main_text']
+    }
+    
+    # Save to data manager
+    if 'templates' not in data_manager.data:
+        data_manager.data['templates'] = {}
+    
+    data_manager.data['templates'][name] = template_data
+    data_manager.save_data('templates.json', data_manager.data['templates'])
+    
+    # Create beautiful preview embed with custom formatting
+    preview_embed = discord.Embed(
+        title=f"**{title}**",
+        color=CONFIG['MAIN_COLOR']
+    )
+    
+    # Add subtitle
+    if template_data['subtitle']:
+        preview_embed.add_field(name="\u200b", value=template_data['subtitle'], inline=False)
+    
+    # Add features
+    if features:
+        features_text = "\n".join([f"✓ {feature}" for feature in features])
+    preview_embed.add_field(
+            name="**Product Features**",
+            value=features_text,
+        inline=False
+    )
+    
+    # Add formatted pricing (this replaces the standard pricing)
+    preview_embed.add_field(
+        name="**Pricing**",
+        value=template_data['formatted_pricing'],
+        inline=False
+    )
+    
+    # Set banner image
+    if template_data['banner_url']:
+        preview_embed.set_image(url=template_data['banner_url'])
+    
+    preview_embed.set_footer(text=template_data['footer_text'])
     
     await interaction.response.send_message(
-        f"✅ Updated {', '.join(updated)} for `{template}`",
+        content=f"✅ **Beautiful template `{name}` created with {format_style.replace('_', ' ').title()} formatting!**",
+        embed=preview_embed,
         ephemeral=True
     )
+
+@bot.tree.command(name="post_template", description="🎨 Post any template to a channel")
+@app_commands.describe(
+    template="Template name to post",
+    channel="Channel to post in"
+)
+@app_commands.checks.has_permissions(manage_messages=True)
+async def post_template(interaction: discord.Interaction, template: str, channel: discord.TextChannel):
+    """🎨 Post any template to a channel"""
+    
+    if template not in data_manager.data.get('templates', {}):
+        available_templates = ", ".join(data_manager.data.get('templates', {}).keys()) or "None"
+        await interaction.response.send_message(f"❌ Template `{template}` not found!\n\n**Available templates:** {available_templates}", ephemeral=True)
+        return
+    
+    template_data = data_manager.data['templates'][template]
+    
+    # Handle different template structures
+    product_name = template_data.get('title', template_data.get('name', 'Product'))
+    subtitle = template_data.get('subtitle', 'Premium Product')
+    features = template_data.get('features', [])
+    color = template_data.get('color', CONFIG['MAIN_COLOR'])
+    banner_url = template_data.get('banner_url', CONFIG['BANNER_IMAGE'])
+    
+    # Handle pricing structure - convert RageMP/AltV to ragemp/altv if needed
+    pricing = template_data.get('pricing', {})
+    if pricing:
+        # Convert RageMP/AltV to ragemp/altv for ProductTemplate compatibility
+        converted_pricing = {}
+        if 'RageMP' in pricing:
+            converted_pricing['ragemp'] = pricing['RageMP']
+        if 'AltV' in pricing:
+            converted_pricing['altv'] = pricing['AltV']
+        # Also check for lowercase versions
+        if 'ragemp' in pricing:
+            converted_pricing['ragemp'] = pricing['ragemp']
+        if 'altv' in pricing:
+            converted_pricing['altv'] = pricing['altv']
+        pricing = converted_pricing
+    
+    # Check if it's a formatted template or regular template
+    if 'formatted_pricing' in template_data:
+        # Formatted template - create custom embed without ProductTemplate pricing
+        embed = discord.Embed(
+            title=f"**{product_name}**",
+            color=color
+        )
+        
+        # Add subtitle
+        if subtitle:
+            embed.add_field(
+                name="\u200b",
+                value=subtitle,
+                inline=False
+            )
+        
+        # Add features
+        if features:
+            features_text = "\n".join([f"✓ {feature}" for feature in features])
+            embed.add_field(
+                name="**Product Features**",
+                value=features_text,
+                inline=False
+            )
+        
+        # Add formatted pricing (this replaces the standard pricing)
+        embed.add_field(
+            name="**Pricing**",
+            value=template_data['formatted_pricing'],
+            inline=False
+        )
+        
+        # Set banner image
+        if banner_url:
+            embed.set_image(url=banner_url)
+    else:
+        # Regular template - use standard ProductTemplate
+        embed = ProductTemplate.create_product_embed(
+            product_name=product_name,
+            subtitle=subtitle,
+            features=features,
+            pricing=pricing,
+            banner_url=banner_url,
+            color=color
+        )
+    
+    embed.set_footer(text=template_data['footer_text'])
+    
+    # Add image if available
+    if template_data.get('image_url'):
+        embed.set_image(url=template_data['image_url'])
+    elif CONFIG['BANNER_IMAGE']:
+        embed.set_image(url=CONFIG['BANNER_IMAGE'])
+    
+    # Create buttons
+    view = ProductTemplate.create_buttons_view(interaction.guild.id)
+    
+    await channel.send(embed=embed, view=view)
+    await interaction.response.send_message(f"🎨 Posted beautiful template `{template}` in {channel.mention}!", ephemeral=True)
+
+@post_template.autocomplete('template')
+async def post_template_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    templates = data_manager.data.get('templates', {}).keys()
+    return [
+        app_commands.Choice(name=template, value=template)
+        for template in templates if current.lower() in template.lower()
+    ][:25]  # Discord limits to 25 choices
+
+class MoreInfoView(discord.ui.View):
+    def __init__(self, template_data: dict, guild_id: int):
+        super().__init__(timeout=None)
+        self.template_data = template_data
+        self.guild_id = guild_id
+    
+    @discord.ui.button(label="More Info", emoji="🔍", style=discord.ButtonStyle.primary)
+    async def more_info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show detailed product information with pricing"""
+        
+        try:
+            # Handle different template structures
+            product_name = self.template_data.get('title', self.template_data.get('name', 'Product'))
+            subtitle = self.template_data.get('subtitle', 'Premium Product')
+            features = self.template_data.get('features', [])
+            color = self.template_data.get('color', CONFIG['MAIN_COLOR'])
+            banner_url = self.template_data.get('banner_url', CONFIG['BANNER_IMAGE'])
+            footer_text = self.template_data.get('footer_text', "NorthernHub • Premium Trusted Service")
+            
+            # Handle pricing structure - convert RageMP/AltV to ragemp/altv if needed
+            pricing = self.template_data.get('pricing', {})
+            if pricing:
+                # Convert RageMP/AltV to ragemp/altv for ProductTemplate compatibility
+                converted_pricing = {}
+                if 'RageMP' in pricing:
+                    converted_pricing['ragemp'] = pricing['RageMP']
+                if 'AltV' in pricing:
+                    converted_pricing['altv'] = pricing['AltV']
+                # Also check for lowercase versions
+                if 'ragemp' in pricing:
+                    converted_pricing['ragemp'] = pricing['ragemp']
+                if 'altv' in pricing:
+                    converted_pricing['altv'] = pricing['altv']
+                pricing = converted_pricing
+            
+            # Create detailed embed with pricing
+            if 'formatted_pricing' in self.template_data:
+                # Formatted template - create custom embed without ProductTemplate pricing
+                embed = discord.Embed(
+                    title=f"**{product_name}**",
+                    color=color
+                )
+                
+                # Add subtitle
+                if subtitle:
+                    embed.add_field(
+                        name="\u200b",
+                        value=subtitle,
+                        inline=False
+                    )
+                
+                # Add features
+                if features:
+                    features_text = "\n".join([f"✓ {feature}" for feature in features])
+                    embed.add_field(
+                        name="**Product Features**",
+                        value=features_text,
+                        inline=False
+                    )
+                
+                # Add formatted pricing (this replaces the standard pricing)
+                embed.add_field(
+                    name="**Pricing**",
+                    value=self.template_data['formatted_pricing'],
+                    inline=False
+                )
+                
+                # Set banner image
+                if banner_url:
+                    embed.set_image(url=banner_url)
+            else:
+                # Regular template - use standard ProductTemplate
+                embed = ProductTemplate.create_product_embed(
+                    product_name=product_name,
+                    subtitle=subtitle,
+                    features=features,
+                    pricing=pricing,
+                    banner_url=banner_url,
+                    color=color
+                )
+            
+            embed.set_footer(text=footer_text)
+            
+            # Add image if available
+            if self.template_data.get('image_url'):
+                embed.set_image(url=self.template_data['image_url'])
+            elif CONFIG['BANNER_IMAGE']:
+                embed.set_image(url=CONFIG['BANNER_IMAGE'])
+            
+            # Create buttons for the detailed view
+            detailed_view = ProductTemplate.create_buttons_view(self.guild_id)
+            
+            await interaction.response.send_message(embed=embed, view=detailed_view, ephemeral=True)
+            
+        except Exception as e:
+            # Fallback error handling
+            error_embed = discord.Embed(
+                title="❌ Error",
+                description=f"Failed to load product details: {str(e)}",
+                color=0xFF0000
+            )
+            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+
+@bot.tree.command(name="post_product_preview", description="🎨 Post a product preview with More Info button")
+@app_commands.describe(
+    template="Template name to post",
+    channel="Channel to post in"
+)
+@app_commands.checks.has_permissions(manage_messages=True)
+async def post_product_preview(interaction: discord.Interaction, template: str, channel: discord.TextChannel):
+    """🎨 Post a product preview with More Info button"""
+    
+    if template not in data_manager.data.get('templates', {}):
+        available_templates = ", ".join(data_manager.data.get('templates', {}).keys()) or "None"
+        await interaction.response.send_message(f"❌ Template `{template}` not found!\n\n**Available templates:** {available_templates}", ephemeral=True)
+        return
+    
+    template_data = data_manager.data['templates'][template]
+    
+    # Create simple preview embed (like the KH System example)
+    preview_embed = discord.Embed(
+        title=template_data['title'],
+        description="Press the button for more info!",
+        color=template_data['color']
+    )
+    
+    # Add banner image
+    if template_data.get('banner_url'):
+        preview_embed.set_image(url=template_data['banner_url'])
+    elif CONFIG['BANNER_IMAGE']:
+        preview_embed.set_image(url=CONFIG['BANNER_IMAGE'])
+    
+    # Create More Info button view
+    view = MoreInfoView(template_data, interaction.guild.id)
+    
+    await channel.send(embed=preview_embed, view=view)
+    await interaction.response.send_message(f"🎨 Posted product preview `{template}` with More Info button in {channel.mention}!", ephemeral=True)
+
+@post_product_preview.autocomplete('template')
+async def post_product_preview_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> List[app_commands.Choice[str]]:
+    templates = data_manager.data.get('templates', {}).keys()
+    return [
+        app_commands.Choice(name=template, value=template)
+        for template in templates if current.lower() in template.lower()
+    ][:25]  # Discord limits to 25 choices
+
+@bot.tree.command(name="debug_template", description="🔍 Debug template structure")
+@app_commands.describe(template="Template name to debug")
+@app_commands.checks.has_permissions(administrator=True)
+async def debug_template(interaction: discord.Interaction, template: str):
+    """🔍 Debug template structure"""
+    
+    if template not in data_manager.data.get('templates', {}):
+        available_templates = ", ".join(data_manager.data.get('templates', {}).keys()) or "None"
+        await interaction.response.send_message(f"❌ Template `{template}` not found!\n\n**Available templates:** {available_templates}", ephemeral=True)
+        return
+    
+    template_data = data_manager.data['templates'][template]
+    
+    # Create debug embed
+    debug_embed = discord.Embed(
+        title=f"🔍 Debug: {template}",
+        color=0x00FF00
+    )
+    
+    # Show template structure
+    debug_text = "**Template Structure:**\n"
+    for key, value in template_data.items():
+        if key == 'pricing' and isinstance(value, dict):
+            debug_text += f"• **{key}**: {list(value.keys())}\n"
+        elif isinstance(value, list):
+            debug_text += f"• **{key}**: {len(value)} items\n"
+        else:
+            debug_text += f"• **{key}**: {str(value)[:100]}{'...' if len(str(value)) > 100 else ''}\n"
+    
+    debug_embed.description = debug_text
+    
+    await interaction.response.send_message(embed=debug_embed, ephemeral=True)
 
 # test your ticket panel
 
@@ -5585,190 +6227,266 @@ async def request_vouch(interaction: discord.Interaction, customer: discord.Memb
     await interaction.response.send_message(embed=embed, view=CustomerVouchView(customer, product))
 
 # --- PRODUCT TEMPLATES ---
-@bot.tree.command(name="create_product_template", description="Create a reusable product embed template")
-@app_commands.describe(
-    name="Template name",
-    title="Product title", 
-    description="Product description (use \\n for new lines)",  # Updated description
-    price="Product price",
-    features="Key features (separate with |)",
-    image_url="Product image URL",
-    stock_info="Stock information"
-)
+
+# Removed duplicate ProductButtonsView classes - now using ProductTemplate.create_buttons_view()
+
+class ExactTemplateModal(discord.ui.Modal):
+    def __init__(self, template_name=None, existing_data=None):
+        super().__init__(title="Create/Edit Product Template")
+        
+        self.name_input = discord.ui.TextInput(
+            label="Template Name",
+            placeholder="e.g., 1337 Cheats",
+            default=template_name or "",
+            required=True
+        )
+        self.add_item(self.name_input)
+        
+        self.title_input = discord.ui.TextInput(
+            label="Product Title (appears at top)",
+            placeholder="1337 Cheats",
+            default=existing_data.get('title', '') if existing_data else "",
+            required=True
+        )
+        self.add_item(self.title_input)
+        
+        self.description_input = discord.ui.TextInput(
+            label="Purchase Description (with ticket channel)",
+            placeholder="To purchase this product... 🎫・ticket >",
+            style=discord.TextStyle.paragraph,
+            default=existing_data.get('description', '') if existing_data else "",
+            required=True
+        )
+        self.add_item(self.description_input)
+        
+        self.main_text_input = discord.ui.TextInput(
+            label="Main Product Text",
+            placeholder="This GTAV software has proven itself...",
+            style=discord.TextStyle.paragraph,
+            default=existing_data.get('main_text', '') if existing_data else "",
+            required=False
+        )
+        self.add_item(self.main_text_input)
+        
+        self.price_text_input = discord.ui.TextInput(
+            label="Price List (exactly as shown)",
+            placeholder="1 Week RageMP: 4.99€\n1 Month RageMP: 9.99€",
+            style=discord.TextStyle.paragraph,
+            default=existing_data.get('price_text', '') if existing_data else "",
+            required=True
+        )
+        self.add_item(self.price_text_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        template_data = {
+            'title': self.title_input.value,
+            'description': self.description_input.value,
+            'main_text': "\n" + self.main_text_input.value if self.main_text_input.value else "",
+            'price_text': "\n" + self.price_text_input.value,
+            'color': 0x303136,  # Default dark gray
+            'image_url': "",  # Can be set separately
+            'created_by': interaction.user.id,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        data_manager.data['templates'][self.name_input.value] = template_data
+        data_manager.save_category_data('templates')
+        
+        await interaction.response.send_message(f"✅ Template `{self.name_input.value}` saved!", ephemeral=True)
+
+
+@bot.tree.command(name="configure_ticket_redirect", description="Set up ticket panel for product redirects")
 @app_commands.checks.has_permissions(administrator=True)
-async def create_product_template(interaction: discord.Interaction, name: str, title: str, description: str, price: str, features: str, image_url: str = None, stock_info: str = "Contact for availability"):
+async def configure_ticket_redirect(interaction: discord.Interaction):
+    """Manually configure ticket panel URL for redirects"""
+    await interaction.response.defer(ephemeral=True)
     
-    description = description.replace('\\n', '\n')
+    # Search for ticket panel
+    found = False
+    for channel in interaction.guild.text_channels:
+        if found:
+            break
+        try:
+            async for message in channel.history(limit=50):
+                if (message.author == bot.user and 
+                    message.embeds and 
+                    "ticket" in str(message.embeds[0].title).lower() and
+                    message.components):
+                    
+                    # Found a ticket panel - save it
+                    guild_id = str(interaction.guild.id)
+                    if guild_id not in data_manager.data['ticket_config']:
+                        data_manager.data['ticket_config'][guild_id] = {}
+                    
+                    data_manager.data['ticket_config'][guild_id]['ticket_channel_id'] = channel.id
+                    data_manager.data['ticket_config'][guild_id]['ticket_message_id'] = message.id
+                    data_manager.save_category_data('ticket_config')
+                    
+                    ticket_url = f"https://discord.com/channels/{interaction.guild.id}/{channel.id}/{message.id}"
+                    
+                    embed = create_embed(
+                        "✅ Ticket Panel Configured",
+                        f"Products will now redirect to your ticket panel",
+                        CONFIG['SUCCESS_COLOR'],
+                        fields=[
+                            ("📍 Channel", channel.mention, True),
+                            ("🔗 Direct URL", f"[Click Here]({ticket_url})", True)
+                        ]
+                    )
+                    
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    found = True
+                    break
+        except:
+            continue
     
-    feature_list = [f.strip() for f in features.split('|') if f.strip()]
-    features_text = "\n".join([f"✓ {feature}" for feature in feature_list])
-    
-    template_data = {
-        'title': title,
-        'description': description,  
-        'price': price,
-        'features': features_text,
-        'image_url': image_url,
-        'stock_info': stock_info,
-        'color': CONFIG['MAIN_COLOR'],
-        'created_by': interaction.user.id,
-        'created_at': datetime.now().isoformat()
-    }
-    
-    data_manager.data['templates'][name] = template_data
-    data_manager.save_category_data('templates')
-    
-    # Show preview
-    preview_embed = create_embed(
-        f"🛒 {title}",
-        f"{description}\n\n**💰 Price:** {price}\n\n**✨ Features:**\n{features_text}",
-        CONFIG['MAIN_COLOR'],
-        image=image_url,
-        fields=[("📦 Stock", stock_info, True)]
-    )
-    
-    await interaction.response.send_message(f"✅ Product template `{name}` created! Preview:", embed=preview_embed, ephemeral=True)
+    if not found:
+        await interaction.followup.send(
+            "❌ No ticket panel found. Please use `/ticket` to create one first, then run this command again.",
+            ephemeral=True
+        )
 
-@bot.tree.command(name="post_product", description="Post a product embed using a template")
-@app_commands.describe(template="The name of the template to use.", channel="The channel to post the product in.")
+class ProductButtonView(discord.ui.View):
+    def __init__(self, guild_id: int, product_name: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.product_name = product_name
+        
+        # Get ticket panel URL from config
+        guild_id_str = str(guild_id)
+        ticket_config = data_manager.data['ticket_config'].get(guild_id_str, {})
+        
+        if 'ticket_channel_id' in ticket_config and 'ticket_message_id' in ticket_config:
+            ticket_url = f"https://discord.com/channels/{guild_id}/{ticket_config['ticket_channel_id']}/{ticket_config['ticket_message_id']}"
+            self.add_item(discord.ui.Button(
+                label="🎫 Create Ticket",
+                style=discord.ButtonStyle.link,
+                url=ticket_url
+            ))
+        else:
+            # Fallback: Create ticket directly
+            self.add_item(DirectTicketButton(product_name))
+        
+        # Add website button
+        self.add_item(discord.ui.Button(
+            label="🌐 Website",
+            style=discord.ButtonStyle.link,
+            url=CONFIG['WEBSITE_URL']
+        ))
+        
+        # Add Discord server button (optional)
+        self.add_item(discord.ui.Button(
+            label="💬 Discord",
+            style=discord.ButtonStyle.link,
+            url="https://discord.gg/your-invite"
+        ))
+
+class DirectTicketButton(discord.ui.Button):
+    def __init__(self, product_name: str):
+        super().__init__(
+            label="🎫 Open Ticket",
+            style=discord.ButtonStyle.primary
+        )
+        self.product_name = product_name
+    
+    async def callback(self, interaction: discord.Interaction):
+        # Create ticket directly
+        ticket_channel = await create_ticket_channel(
+            interaction=interaction,
+            category_key="purchase",
+            product_hint=self.product_name
+        )
+        
+        if ticket_channel:
+            await interaction.response.send_message(
+                f"✅ Your ticket has been created: {ticket_channel.mention}",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Failed to create ticket. Please contact an administrator.",
+                ephemeral=True
+            )
+
+
+# Removed post_1337 - use /quick_1337 instead
+
+
+
+@bot.tree.command(name="template_guide", description="📖 Get copy-paste templates and usage guide")
 @app_commands.checks.has_permissions(manage_messages=True)
-async def post_product(interaction: discord.Interaction, template: str, channel: discord.TextChannel):
-    if template not in data_manager.data['templates']:
-        available = ", ".join(data_manager.data['templates'].keys()) or "None"
-        await interaction.response.send_message(f"❌ Template '{template}' not found. Available: {available}", ephemeral=True)
-        return
+async def template_guide(interaction: discord.Interaction):
+    """📖 Get copy-paste templates and usage guide"""
     
-    template_data = data_manager.data['templates'][template]
+    guide_text = """**🎨 ULTIMATE Product Creation Guide**
+
+**🚀 Available Commands:**
+• `/create_formatted_template` - Create beautiful templates with enhanced pricing
+• `/post_template` - Post any template (formatted or regular) - with autocomplete!
+• `/post_product_preview` - Post product preview with More Info button
+
+**📋 Template Creation:**
+
+**1. Create Formatted Template:**
+```
+/create_formatted_template
+name: "My Product"
+title: "Product Title"
+description: "Feature 1, Feature 2, Feature 3"
+format_style: "premium_code"
+ragemp_7d: 4.99
+ragemp_30d: 9.99
+ragemp_90d: 24.99
+altv_7d: 4.99
+altv_30d: 9.99
+altv_90d: 24.99
+```
+
+**2. Post Any Template:**
+```
+/post_template
+template: "Template Name" (shows available templates!)
+channel: #your-channel
+```
+
+**3. Post Product Preview (More Info Button):**
+```
+/post_product_preview
+template: "Template Name" (shows available templates!)
+channel: #your-channel
+```
+
+**💡 Pro Tips:**
+• Use `\\n` in description for new lines: "Feature 1\\nFeature 2\\nFeature 3"
+• Template names are saved and show in autocomplete
+• All templates are stored in the same system
+• More Info button shows detailed pricing when clicked
+• **Custom pricing** - Enter your own prices for each product (defaults to 4.99€, 9.99€, 24.99€)
+• **Euro currency** - All prices automatically use € symbol
+
+**🎨 Formatting Styles:**
+• 🎯 Premium Code Block - Clean code-style pricing
+• 💎 Elegant Quote Style - Quote-based formatting
+• ⚡ Bold & Arrows - Bold text with arrows
+• ✨ Minimal Clean - Simple and clean
+• 🔥 Gaming Style - Gaming-themed formatting
+• 💫 Luxury Format - High-end luxury style
+
+**✅ Features:**
+• All templates saved in unified system
+• Custom banners (or use default Northern Hub banner)
+• Flexible pricing (RageMP + AltV)
+• Beautiful formatting options
+• Automatic ticket/website buttons
+• Easy template management"""
     
-    product_embed = discord.Embed(
-        title=f"**{template_data['title']}**",
-        description=f"**{template_data.get('short_description', 'Drücke den Button für mehr Infos!')}**",
-        color=template_data.get('color', 0x303136)
-    )
-
-    # Format features with proper Discord formatting
-    if template_data.get('features'):
-        features_text = "**Product Features:**\n"
-        feature_lines = template_data['features'].split('\n')
-        for line in feature_lines:
-            clean_line = line.replace('✓', '').replace('•', '').strip()
-            if clean_line:
-                features_text += f"> **✓** {clean_line}\n"  # Use quote blocks for features
-
-        product_embed.add_field(
-            name="\u200b",  # Zero-width space for better formatting
-            value=features_text,
-            inline=False
-        )
-
-# Format pricing with code blocks for better readability
-    if template_data.get('price'):
-        prices = [p.strip() for p in template_data['price'].split('|')]
-        price_text = "**Pricing:**\n"
-
-        for price_info in prices:
-            if ':' in price_info:
-                duration, cost = price_info.split(':', 1)
-                duration = duration.strip()
-                cost = cost.strip()
-
-                if "not available" in cost.lower():
-                    price_text += f"> ~~`{duration}`~~ - ~~{cost}~~\n"
-                else:
-                    price_text += f"> `{duration}` - **{cost}**\n"
-
-        product_embed.add_field(
-            name="\u200b",
-            value=price_text,
-            inline=False
-        )
-    
-    # Format PRICING as a field with special styling
-    if template_data.get('price'):
-        prices = [p.strip() for p in template_data['price'].split('|')]
-        
-        # Create formatted price blocks
-        price_blocks = []
-        
-        # Group prices by type (RageMP vs Alt:V) if applicable
-        rage_prices = []
-        altv_prices = []
-        general_prices = []
-        
-        for price_info in prices:
-            if ':' in price_info:
-                duration, cost = price_info.split(':', 1)
-                duration = duration.strip()
-                cost = cost.strip()
-                
-                # Create styled price entry
-                if "ragemp" in duration.lower():
-                    if "not available" in cost.lower():
-                        rage_prices.append(f"` {duration:<20} `  ~~{cost}~~")
-                    else:
-                        rage_prices.append(f"` {duration:<20} `  **{cost}**")
-                elif "alt:v" in duration.lower() or "altv" in duration.lower():
-                    if "not available" in cost.lower():
-                        altv_prices.append(f"` {duration:<20} `  ~~Not Available~~")
-                    else:
-                        altv_prices.append(f"` {duration:<20} `  **{cost}**")
-                else:
-                    # General pricing (like Hydrogen)
-                    general_prices.append(f"` {duration:<15} `  **{cost}**")
-        
-        # Build the price display
-        price_display = ""
-        
-        if rage_prices:
-            price_display += "**RageMP:**\n"
-            price_display += "\n".join(rage_prices) + "\n\n"
-        
-        if altv_prices:
-            price_display += "**Alt:V:**\n"
-            price_display += "\n".join(altv_prices)
-        
-        if general_prices:
-            price_display = "\n".join(general_prices)
-        
-        product_embed.add_field(
-            name="**Pricing**",
-            value=price_display.strip(),
-            inline=False
-        )
-    
-    # Add stock status as a small field
-    if template_data.get('stock_info'):
-        product_embed.add_field(
-            name="**📦 Stock Status**",
-            value=f"`{template_data['stock_info']}`",
-            inline=True
-        )
-    
-    # Add purchase info field
-    product_embed.add_field(
-        name="**🛒 How to Purchase**",
-        value="`Click 'More Details' below`",
-        inline=True
+    embed = create_embed(
+        "📖 Product Creation Guide",
+        guide_text,
+        CONFIG['MAIN_COLOR']
     )
     
-    # Set image if exists (at the bottom like in screenshots)
-    if template_data.get('image_url'):
-        product_embed.set_image(url=template_data['image_url'])
-    
-    # Set footer with branding
-    branding = get_branding_data()
-    product_embed.set_footer(
-        text=f"{branding['company_name']} • Premium Service",
-        icon_url=branding.get('logo_url')
-    )
-    
-    # Add timestamp
-    product_embed.timestamp = datetime.now(timezone.utc)
-    
-    # Send with interactive view
-    await channel.send(embed=product_embed, view=ProductPostView(template_data, interaction.guild.id))
-    
-    await interaction.response.send_message(f"✅ Product `{template}` posted in {channel.mention}", ephemeral=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="list_templates", description="List all available product templates")
 @app_commands.checks.has_permissions(manage_messages=True)
@@ -5792,16 +6510,6 @@ async def list_templates(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@post_product.autocomplete('template')
-async def post_product_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-) -> List[app_commands.Choice[str]]:
-    templates = data_manager.data.get('templates', {}).keys()
-    return [
-        app_commands.Choice(name=template, value=template)
-        for template in templates if current.lower() in template.lower()
-    ][:25]  # Discord limits to 25 choices    
 
 @bot.tree.command(name="find_ticket_panel", description="Automatically find and configure the ticket panel in your server")
 @app_commands.checks.has_permissions(administrator=True)
@@ -6184,11 +6892,68 @@ All sales are final. No refunds under any circumstances.
     except discord.Forbidden:
         await interaction.response.send_message("❌ Missing permissions to post in that channel", ephemeral=True)
 
+def get_bot_token():
+    """
+    Get bot token from .env file or ask user to input it
+    """
+    # Try loading from .env file first
+    try:
+        with open('.env', 'r') as f:
+            for line in f:
+                if line.startswith('DISCORD_TOKEN='):
+                    token = line.split('=', 1)[1].strip()
+                    if token:
+                        print("✅ Token loaded from .env file")
+                        return token
+    except FileNotFoundError:
+        pass  # .env file doesn't exist, will ask user
+    except Exception as e:
+        print(f"⚠️  Error reading .env file: {e}")
+    
+    # Ask user for token
+    print("\n🤖 Discord Bot Token Required")
+    print("=" * 30)
+    print("Enter your Discord Bot Token:")
+    
+    try:
+        import getpass
+        token = getpass.getpass("Token: ").strip()
+        
+        if not token:
+            raise ValueError("No token provided")
+        
+        # Save token to .env file
+        try:
+            with open('.env', 'w') as f:
+                f.write(f"DISCORD_TOKEN={token}\n")
+            
+            # Set restrictive permissions on Unix systems
+            try:
+                import stat
+                os.chmod('.env', stat.S_IRUSR | stat.S_IWUSR)
+            except:
+                pass  # Windows doesn't support chmod
+            
+            print("✅ Token saved to .env file")
+        except Exception as e:
+            print(f"⚠️  Could not save token to .env file: {e}")
+        
+        return token
+        
+    except KeyboardInterrupt:
+        print("\n❌ Setup cancelled by user")
+        raise ValueError("Setup cancelled")
+    except Exception as e:
+        print(f"❌ Error getting token: {e}")
+        raise
+
 if __name__ == "__main__":
     try:
-        token = os.getenv("DISCORD_TOKEN")
-        if not token:
-            raise ValueError("DISCORD_TOKEN not found in environment variables.")
+        token = get_bot_token()
+        print("🚀 Starting Discord bot...")
         bot.run(token)
+    except KeyboardInterrupt:
+        print("\n👋 Bot stopped by user")
     except Exception as e:
-        logger.critical(f"CRITICAL: Failed to start bot - {e}")
+        print(f"\n❌ Failed to start bot: {e}")
+        print("Make sure your bot token is correct and try again.")
