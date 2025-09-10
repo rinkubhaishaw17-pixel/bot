@@ -1,43 +1,3 @@
-"""
-Northern Hub Discord Bot - Optimized & Cleaned
-===============================================
-
-This bot has been optimized and cleaned with the following improvements:
-
-✅ CLEANUP COMPLETED:
-- Removed duplicate ProductButtonsView classes
-- Consolidated embed creation into ProductTemplate system
-- Added Northern Hub banner image integration
-- Standardized button creation across all products
-- Moved hardcoded values to CONFIG
-- Created unified template system matching reference images
-- Removed redundant commands (create_product, create_product_template, create_exact_template, edit_template_image, post_product, quick_edit, quick_1337, setup_1337_template)
-- Unified template system - all templates saved in same location
-
-✅ NEW FEATURES:
-- ProductTemplate class for consistent product embeds
-- Default templates with exact reference formatting
-- Automatic banner image integration
-- Standardized button views (Ticket & Website)
-- Enhanced create_formatted_template with description input
-- Unified post_template command for all template types
-- 6 beautiful formatting styles for templates
-- More Info button system - preview with detailed pricing on click
-
-✅ REFERENCE IMAGE COMPLIANCE:
-- Exact text formatting from reference images
-- Proper color coding for pricing (red/cyan)
-- Northern Hub banner integration
-- Consistent button styling and layout
-
-✅ SIMPLIFIED COMMANDS:
-- /create_formatted_template - Create beautiful templates with enhanced pricing + newline support
-- /post_template - Post any template (formatted or regular) with autocomplete
-- /post_product_preview - Post product preview with More Info button
-- /template_guide - Get copy-paste templates and usage guide
-- All templates now saved in unified system with autocomplete
-"""
-
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timedelta, timezone
@@ -59,7 +19,7 @@ from typing import Optional, Dict, List, Union
 import discord
 from concurrent.futures import ThreadPoolExecutor
 
-TARGET_VOUCH_CHANNEL_ID = 1413262309106782268 
+# TARGET_VOUCH_CHANNEL_ID = 1413262309106782268  # Removed - now using smart detection 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1643,6 +1603,61 @@ initialize_default_templates()
 # --- UTILITY FUNCTIONS ---
 
 
+async def find_vouch_channel(guild: discord.Guild) -> Optional[discord.TextChannel]:
+    """
+    Smart vouch channel detection - finds the best vouch channel for public viewing
+    Priority: 1) Manually set channel, 2) Channels with 'vouch' in name, 3) Channels with 'review' in name, 4) Create new public vouch channel
+    """
+    guild_id = str(guild.id)
+    
+    # First, check if there's a manually set vouch channel
+    if 'vouch_config' in data_manager.data and guild_id in data_manager.data['vouch_config']:
+        channel_id = data_manager.data['vouch_config'][guild_id]['channel_id']
+        manual_channel = guild.get_channel(channel_id)
+        if manual_channel:
+            logger.info(f"Using manually set vouch channel: {manual_channel.name} (ID: {manual_channel.id})")
+            return manual_channel
+    
+    # Second, try to find existing vouch-related channels
+    vouch_keywords = ['vouch', 'review', 'testimonial', 'feedback', 'rating']
+    
+    for keyword in vouch_keywords:
+        for channel in guild.text_channels:
+            if keyword.lower() in channel.name.lower():
+                # Check if it's a public channel (not in private categories)
+                if not channel.category or not any(perm in ['🔒', 'bot', 'log', 'private'] for perm in channel.category.name.lower().split()):
+                    logger.info(f"Found vouch channel: {channel.name} (ID: {channel.id})")
+                    return channel
+    
+    # If no suitable channel found, create a new public vouch channel
+    try:
+        # Look for a suitable category (Community, General, or create new)
+        suitable_categories = ['Community', 'General', '💬 Community', '📢 Information']
+        target_category = None
+        
+        for cat_name in suitable_categories:
+            target_category = discord.utils.get(guild.categories, name=cat_name)
+            if target_category:
+                break
+        
+        # Create vouch channel
+        vouch_channel = await guild.create_text_channel(
+            name="vouches",
+            category=target_category,
+            topic="⭐ Customer reviews and vouches",
+            reason="Auto-created vouch channel for public reviews"
+        )
+        
+        logger.info(f"Created new vouch channel: {vouch_channel.name} (ID: {vouch_channel.id})")
+        return vouch_channel
+        
+    except discord.Forbidden:
+        logger.error(f"Cannot create vouch channel in {guild.name} - missing permissions")
+        return None
+    except Exception as e:
+        logger.error(f"Error creating vouch channel: {e}")
+        return None
+
 async def find_or_create_channel(guild: discord.Guild, channel_name: str, category_name: str = None) -> Optional[discord.TextChannel]:
     """
     Finds an existing channel or creates a new one.
@@ -2518,6 +2533,221 @@ async def list_invoice_templates(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)        
 
+# Role Assignment Command
+@bot.tree.command(name="assign_roles", description="Add specific roles to all members who don't have them")
+@app_commands.checks.has_permissions(administrator=True)
+async def assign_roles(interaction: discord.Interaction, role: discord.Role, dry_run: bool = False):
+    """
+    Add a specific role to all members who don't have it
+    
+    Args:
+        role: The role to assign to members
+        dry_run: If True, only shows what would happen without actually assigning roles
+    """
+    if not interaction.guild:
+        await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+        return
+    
+    # Check if bot has permission to manage roles
+    if not interaction.guild.me.guild_permissions.manage_roles:
+        await interaction.response.send_message("❌ I don't have permission to manage roles.", ephemeral=True)
+        return
+    
+    # Check if the role is higher than bot's highest role
+    if role >= interaction.guild.me.top_role:
+        await interaction.response.send_message("❌ I can't assign roles that are higher than or equal to my highest role.", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Get all members
+        members = interaction.guild.members
+        members_to_assign = []
+        
+        # Find members who don't have the role
+        for member in members:
+            if not member.bot and role not in member.roles:
+                members_to_assign.append(member)
+        
+        if not members_to_assign:
+            await interaction.followup.send(f"✅ All members already have the role `{role.name}`!", ephemeral=True)
+            return
+        
+        if dry_run:
+            # Show what would happen
+            member_list = "\n".join([f"• {member.display_name} ({member.id})" for member in members_to_assign[:20]])
+            if len(members_to_assign) > 20:
+                member_list += f"\n... and {len(members_to_assign) - 20} more members"
+            
+            embed = discord.Embed(
+                title="🔍 Dry Run - Role Assignment Preview",
+                description=f"Would assign `{role.name}` to **{len(members_to_assign)}** members:",
+                color=CONFIG['WARNING_COLOR']
+            )
+            embed.add_field(name="Members to receive role:", value=member_list, inline=False)
+            embed.add_field(name="Total members:", value=str(len(members_to_assign)), inline=True)
+            embed.add_field(name="Server total members:", value=str(len(members)), inline=True)
+            embed.set_footer(text="Run without --dry-run to actually assign the roles")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        # Actually assign roles
+        success_count = 0
+        failed_count = 0
+        failed_members = []
+        
+        # Process in batches to avoid rate limits
+        batch_size = 10
+        for i in range(0, len(members_to_assign), batch_size):
+            batch = members_to_assign[i:i + batch_size]
+            
+            for member in batch:
+                try:
+                    await member.add_roles(role, reason=f"Bulk role assignment by {interaction.user}")
+                    success_count += 1
+                except discord.Forbidden:
+                    failed_count += 1
+                    failed_members.append(f"{member.display_name} (No permission)")
+                except discord.HTTPException as e:
+                    failed_count += 1
+                    failed_members.append(f"{member.display_name} (Error: {e})")
+                except Exception as e:
+                    failed_count += 1
+                    failed_members.append(f"{member.display_name} (Unknown error: {e})")
+            
+            # Small delay between batches to avoid rate limits
+            if i + batch_size < len(members_to_assign):
+                await asyncio.sleep(1)
+        
+        # Create result embed
+        embed = discord.Embed(
+            title="✅ Role Assignment Complete",
+            description=f"Successfully assigned `{role.name}` to members",
+            color=CONFIG['SUCCESS_COLOR']
+        )
+        embed.add_field(name="✅ Successful", value=str(success_count), inline=True)
+        embed.add_field(name="❌ Failed", value=str(failed_count), inline=True)
+        embed.add_field(name="📊 Total Processed", value=str(success_count + failed_count), inline=True)
+        
+        if failed_members:
+            failed_list = "\n".join(failed_members[:10])
+            if len(failed_members) > 10:
+                failed_list += f"\n... and {len(failed_members) - 10} more"
+            embed.add_field(name="❌ Failed Members", value=failed_list, inline=False)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ An error occurred: {str(e)}", ephemeral=True)
+
+# Vouch Channel Management Command
+@bot.tree.command(name="set_vouch_channel", description="🔧 Set a specific channel as the vouch channel")
+@app_commands.describe(channel="The channel to use for vouches")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_vouch_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    """Set a specific channel as the vouch channel"""
+    
+    # Store the channel ID in the data manager
+    guild_id = str(interaction.guild.id)
+    if 'vouch_config' not in data_manager.data:
+        data_manager.data['vouch_config'] = {}
+    
+    data_manager.data['vouch_config'][guild_id] = {
+        'channel_id': channel.id,
+        'channel_name': channel.name,
+        'set_by': interaction.user.id,
+        'set_at': datetime.now().isoformat()
+    }
+    
+    data_manager.save_data('vouch_config.json', data_manager.data['vouch_config'])
+    
+    embed = create_embed(
+        "✅ Vouch Channel Set",
+        f"Vouch channel has been set to {channel.mention}",
+        CONFIG['SUCCESS_COLOR']
+    )
+    embed.add_field(name="Channel", value=f"{channel.name} (ID: {channel.id})", inline=True)
+    embed.add_field(name="Set by", value=interaction.user.mention, inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="vouch_info", description="ℹ️ Get information about the current vouch system")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def vouch_info(interaction: discord.Interaction):
+    """Get information about the current vouch system"""
+    
+    guild_id = str(interaction.guild.id)
+    
+    # Check if there's a manually set vouch channel
+    manual_channel = None
+    if 'vouch_config' in data_manager.data and guild_id in data_manager.data['vouch_config']:
+        channel_id = data_manager.data['vouch_config'][guild_id]['channel_id']
+        manual_channel = interaction.guild.get_channel(channel_id)
+    
+    # Find current vouch channel using smart detection
+    current_channel = await find_vouch_channel(interaction.guild)
+    
+    embed = create_embed(
+        "ℹ️ Vouch System Information",
+        "Current vouch channel configuration",
+        CONFIG['MAIN_COLOR']
+    )
+    
+    if manual_channel:
+        embed.add_field(
+            name="🔧 Manual Channel",
+            value=f"{manual_channel.mention} (ID: {manual_channel.id})",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🔧 Manual Channel",
+            value="None set - using auto-detection",
+            inline=False
+        )
+    
+    if current_channel:
+        embed.add_field(
+            name="📍 Current Channel",
+            value=f"{current_channel.mention} (ID: {current_channel.id})",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="📍 Current Channel",
+            value="❌ No suitable channel found",
+            inline=False
+        )
+    
+    # Show available vouch-related channels
+    vouch_keywords = ['vouch', 'review', 'testimonial', 'feedback', 'rating']
+    available_channels = []
+    
+    for channel in interaction.guild.text_channels:
+        for keyword in vouch_keywords:
+            if keyword.lower() in channel.name.lower():
+                available_channels.append(f"• {channel.mention} (`{channel.name}`)")
+                break
+    
+    if available_channels:
+        embed.add_field(
+            name="🔍 Available Vouch Channels",
+            value="\n".join(available_channels[:5]),  # Show max 5
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🔍 Available Vouch Channels",
+            value="None found - will create new channel when needed",
+            inline=False
+        )
+    
+    embed.set_footer(text="Use /set_vouch_channel to manually set a specific channel")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 class EnhancedVouchModal(discord.ui.Modal):  # ✅ Correct class definition
     def __init__(self, prefilled_product=None):  # ✅ Define __init__ method
         super().__init__(title="Leave a Product Review")  # ✅ Pass title here
@@ -2597,17 +2827,26 @@ class EnhancedVouchModal(discord.ui.Modal):  # ✅ Correct class definition
         if self.supporter_input.value:
             vouch_embed.add_field(name="👨‍💼 Supported By", value=self.supporter_input.value, inline=True)
 
-        # Send to your specified vouch channel
-        target_channel = interaction.guild.get_channel(TARGET_VOUCH_CHANNEL_ID)
-        if target_channel:
-            await target_channel.send(embed=vouch_embed)
-            await interaction.response.send_message("✅ Thank you for your review! It has been posted to the vouch channel.", ephemeral=True)
-        else:
-    # Fallback to log channel if target channel not found
-            vouch_channel = await find_or_create_channel(interaction.guild, CHANNELS['VOUCH'])
-            if vouch_channel:
+        # Use smart vouch channel detection
+        vouch_channel = await find_vouch_channel(interaction.guild)
+        
+        if vouch_channel:
+            try:
                 await vouch_channel.send(embed=vouch_embed)
-            await interaction.response.send_message("✅ Vouch submitted successfully!", ephemeral=True)
+                await interaction.response.send_message(
+                    f"✅ Thank you for your review! It has been posted to {vouch_channel.mention}.",
+                    ephemeral=True
+                )
+            except discord.Forbidden:
+                await interaction.response.send_message(
+                    "❌ I don't have permission to send messages to the vouch channel. Please contact an administrator.",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                "❌ Could not find or create a vouch channel. Please contact an administrator to set up a vouch channel.",
+                ephemeral=True
+            )
         
 # --- ENHANCED TICKET SYSTEM ---
 class AdvancedTicketView(discord.ui.View):
@@ -3670,10 +3909,14 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     title="Product title",
     description="Product description/features (separate with commas)",
     format_style="Choose beautiful formatting style",
+    pricing_type="Choose pricing type for this product",
+    custom_pricing="Custom pricing text (for non-duration products)",
     ragemp_7d="7 Days RageMP price (e.g., 4.99)",
+    ragemp_14d="14 Days RageMP price (e.g., 7.99)",
     ragemp_30d="30 Days RageMP price (e.g., 9.99)",
     ragemp_90d="90 Days RageMP price (e.g., 24.99)",
     altv_7d="7 Days AltV price (e.g., 4.99)",
+    altv_14d="14 Days AltV price (e.g., 7.99)",
     altv_30d="30 Days AltV price (e.g., 9.99)",
     altv_90d="90 Days AltV price (e.g., 24.99)"
 )
@@ -3685,6 +3928,10 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     app_commands.Choice(name="🔥 Gaming Style", value="gaming_style"),
     app_commands.Choice(name="💫 Luxury Format", value="luxury_format")
 ])
+@app_commands.choices(pricing_type=[
+    app_commands.Choice(name="⏰ Duration-based (7/14/30/90 days)", value="duration"),
+    app_commands.Choice(name="📝 Custom pricing text", value="custom")
+])
 @app_commands.checks.has_permissions(administrator=True)
 async def create_formatted_template(
     interaction: discord.Interaction, 
@@ -3692,222 +3939,199 @@ async def create_formatted_template(
     title: str,
     description: str,
     format_style: str,
-    ragemp_7d: float = 4.99,
-    ragemp_30d: float = 9.99,
-    ragemp_90d: float = 24.99,
-    altv_7d: float = 4.99,
-    altv_30d: float = 9.99,
-    altv_90d: float = 24.99
+    pricing_type: str,
+    custom_pricing: str = None,
+    ragemp_7d: float = None,
+    ragemp_14d: float = None,
+    ragemp_30d: float = None,
+    ragemp_90d: float = None,
+    altv_7d: float = None,
+    altv_14d: float = None,
+    altv_30d: float = None,
+    altv_90d: float = None
 ):
     """🎨 Create beautiful product templates with enhanced pricing formatting"""
-    
-    # Enhanced formatting presets with beautiful pricing
-    formats = {
-        "premium_code": {
-            "main_text": "This **premium software** delivers **exceptional performance** with **regular updates**, **reliable functionality**, and **outstanding value**!",
-            "price_formatted": """```ansi
-[0;31m┌─ RageMP Pricing ─────────────────┐[0m
-[0;31m│ 7 Days  RageMP    - 4.99€      │[0m
-[0;31m│ 30 Days RageMP    - 9.99€      │[0m
-[0;31m│ 90 Days RageMP    - 24.99€     │[0m
-[0;31m└─────────────────────────────────┘[0m
-[0;36m┌─ AltV Pricing ───────────────────┐[0m
-[0;36m│ 7 Days  AltV     - 4.99€       │[0m
-[0;36m│ 30 Days AltV     - 9.99€       │[0m
-[0;36m│ 90 Days AltV     - 24.99€      │[0m
-[0;36m└─────────────────────────────────┘[0m
-```""",
-            "color": 0x2F3136
-        },
-        "elegant_quote": {
-            "main_text": "> **🌟 Premium Features:**\n> • Regular updates & patches\n> • Reliable functionality\n> • Excellent performance\n> • Affordable pricing\n> • 24/7 support available",
-            "price_formatted": """>>> **💳 Pricing Information**
-> 
-> **RageMP Options:**
-> `7 Days  ` → **4.99€** 💰
-> `30 Days ` → **9.99€** 💰
-> `90 Days ` → **24.99€** 💰
-> 
-> **AltV Options:**
-> `7 Days  ` → **4.99€** 💰
-> `30 Days ` → **9.99€** 💰
-> `90 Days ` → **24.99€** 💰""",
-            "color": 0x00CED1
-        },
-        "bold_arrows": {
-            "main_text": "**🚀 Premium Features:**\n**→** Regular Updates & Patches\n**→** Reliable Functionality\n**→** Excellent Performance\n**→** Affordable Pricing\n**→** 24/7 Support Available",
-            "price_formatted": """**__💰 PRICING INFORMATION__**
-
-**🎯 RageMP Options:**
-**• 7 Days RageMP:** `4.99€` ⭐
-**• 30 Days RageMP:** `9.99€` ⭐
-**• 90 Days RageMP:** `24.99€` ⭐
-
-**🎯 AltV Options:**
-**• 7 Days AltV:** `4.99€` ⭐
-**• 30 Days AltV:** `9.99€` ⭐
-**• 90 Days AltV:** `24.99€` ⭐""",
-            "color": 0xFFD700
-        },
-        "minimal_clean": {
-            "main_text": "**Features:** Regular updates • Reliable functionality • Excellent performance • Affordable pricing • 24/7 support",
-            "price_formatted": """**RageMP:** 7D: 4.99€ | 30D: 9.99€ | 90D: 24.99€
-**AltV:** 7D: 4.99€ | 30D: 9.99€ | 90D: 24.99€""",
-            "color": 0x00FF7F
-        },
-        "gaming_style": {
-            "main_text": "**🎮 GAMING SOFTWARE FEATURES:**\n**⚔️** Regular Updates\n**🛡️** Reliable Protection\n**⚡** High Performance\n**💎** Premium Quality\n**🎯** Easy to Use",
-            "price_formatted": """```diff
-+ RageMP Pricing:
-+ 7 Days  = 4.99€
-+ 30 Days = 9.99€
-+ 90 Days = 24.99€
-
-+ AltV Pricing:
-+ 7 Days  = 4.99€
-+ 30 Days = 9.99€
-+ 90 Days = 24.99€
-```""",
-            "color": 0x9B59B6
-        },
-        "luxury_format": {
-            "main_text": "**✨ LUXURY SOFTWARE EXPERIENCE**\n**💎** Premium Quality\n**🌟** Regular Updates\n**⚡** High Performance\n**🛡️** Reliable Security\n**👑** Elite Features",
-            "price_formatted": """**💎 PREMIUM PRICING**
-
-**RageMP Packages:**
-┌─────────────────────────┐
-│ 7 Days  │ 4.99€  │ 💰 │
-│ 30 Days │ 9.99€  │ 💰 │
-│ 90 Days │ 24.99€ │ 💰 │
-└─────────────────────────┘
-
-**AltV Packages:**
-┌─────────────────────────┐
-│ 7 Days  │ 4.99€  │ 💰 │
-│ 30 Days │ 9.99€  │ 💰 │
-│ 90 Days │ 24.99€ │ 💰 │
-└─────────────────────────┘""",
-            "color": 0xFFD700
-        }
-    }
-    
-    selected_format = formats[format_style]
     
     # Parse description into features list (support newlines with \n)
     description = description.replace('\\n', '\n')
     features = [f.strip() for f in description.split(',') if f.strip()]
     
-    # Create dynamic formatted pricing based on custom values
-    def create_formatted_pricing(style, ragemp_7d, ragemp_30d, ragemp_90d, altv_7d, altv_30d, altv_90d):
+    # Handle custom pricing type
+    if pricing_type == "custom":
+        if not custom_pricing:
+            await interaction.response.send_message("❌ Custom pricing text is required when using custom pricing type.", ephemeral=True)
+            return
+        
+        # Use custom pricing text directly
+        formatted_pricing = custom_pricing
+    else:
+        # Duration-based pricing - collect only provided durations
+        ragemp_prices = {}
+        altv_prices = {}
+        
+        # Collect RageMP prices for provided durations
+        if ragemp_7d is not None:
+            ragemp_prices["7 Days"] = f"{ragemp_7d}€"
+        if ragemp_14d is not None:
+            ragemp_prices["14 Days"] = f"{ragemp_14d}€"
+        if ragemp_30d is not None:
+            ragemp_prices["30 Days"] = f"{ragemp_30d}€"
+        if ragemp_90d is not None:
+            ragemp_prices["90 Days"] = f"{ragemp_90d}€"
+        
+        # Collect AltV prices for provided durations
+        if altv_7d is not None:
+            altv_prices["7 Days"] = f"{altv_7d}€"
+        if altv_14d is not None:
+            altv_prices["14 Days"] = f"{altv_14d}€"
+        if altv_30d is not None:
+            altv_prices["30 Days"] = f"{altv_30d}€"
+        if altv_90d is not None:
+            altv_prices["90 Days"] = f"{altv_90d}€"
+        
+        if not ragemp_prices and not altv_prices:
+            await interaction.response.send_message("❌ Please provide at least one price for either RageMP or AltV.", ephemeral=True)
+            return
+        
+        # Create dynamic formatted pricing based on provided durations
+        def create_dynamic_pricing(style, ragemp_prices, altv_prices):
         if style == "premium_code":
-            return f"""```ansi
-[0;31m┌─ RageMP Pricing ─────────────────┐[0m
-[0;31m│ 7 Days  RageMP    - {ragemp_7d}€      │[0m
-[0;31m│ 30 Days RageMP    - {ragemp_30d}€      │[0m
-[0;31m│ 90 Days RageMP    - {ragemp_90d}€     │[0m
-[0;31m└─────────────────────────────────┘[0m
-[0;36m┌─ AltV Pricing ───────────────────┐[0m
-[0;36m│ 7 Days  AltV     - {altv_7d}€       │[0m
-[0;36m│ 30 Days AltV     - {altv_30d}€       │[0m
-[0;36m│ 90 Days AltV     - {altv_90d}€      │[0m
-[0;36m└─────────────────────────────────┘[0m
-```"""
+                result = "```ansi\n"
+                if ragemp_prices:
+                    result += "[0;31m┌─ RageMP Pricing ─────────────────┐[0m\n"
+                    for duration, price in ragemp_prices.items():
+                        result += f"[0;31m│ {duration:<8} RageMP    - {price:<8} │[0m\n"
+                    result += "[0;31m└─────────────────────────────────┘[0m\n"
+                if altv_prices:
+                    result += "[0;36m┌─ AltV Pricing ───────────────────┐[0m\n"
+                    for duration, price in altv_prices.items():
+                        result += f"[0;36m│ {duration:<8} AltV     - {price:<8} │[0m\n"
+                    result += "[0;36m└─────────────────────────────────┘[0m\n"
+                result += "```"
+                return result
+                
         elif style == "elegant_quote":
-            return f""">>> **💳 Pricing Information**
-> 
-> **RageMP Options:**
-> `7 Days  ` → **{ragemp_7d}€** 💰
-> `30 Days ` → **{ragemp_30d}€** 💰
-> `90 Days ` → **{ragemp_90d}€** 💰
-> 
-> **AltV Options:**
-> `7 Days  ` → **{altv_7d}€** 💰
-> `30 Days ` → **{altv_30d}€** 💰
-> `90 Days ` → **{altv_90d}€** 💰"""
+                result = ">>> **💳 Pricing Information**\n> \n"
+                if ragemp_prices:
+                    result += "> **RageMP Options:**\n"
+                    for duration, price in ragemp_prices.items():
+                        result += f"> `{duration:<8}` → **{price}** 💰\n"
+                    result += "> \n"
+                if altv_prices:
+                    result += "> **AltV Options:**\n"
+                    for duration, price in altv_prices.items():
+                        result += f"> `{duration:<8}` → **{price}** 💰\n"
+                return result
+                
         elif style == "bold_arrows":
-            return f"""**__💰 PRICING INFORMATION__**
-
-**🎯 RageMP Options:**
-**→** 7 Days RageMP: **{ragemp_7d}€** ⭐
-**→** 30 Days RageMP: **{ragemp_30d}€** ⭐
-**→** 90 Days RageMP: **{ragemp_90d}€** ⭐
-
-**🎯 AltV Options:**
-**→** 7 Days AltV: **{altv_7d}€** ⭐
-**→** 30 Days AltV: **{altv_30d}€** ⭐
-**→** 90 Days AltV: **{altv_90d}€** ⭐"""
+                result = "**__💰 PRICING INFORMATION__**\n\n"
+                if ragemp_prices:
+                    result += "**🎯 RageMP Options:**\n"
+                    for duration, price in ragemp_prices.items():
+                        result += f"**• {duration} RageMP:** `{price}` ⭐\n"
+                    result += "\n"
+                if altv_prices:
+                    result += "**🎯 AltV Options:**\n"
+                    for duration, price in altv_prices.items():
+                        result += f"**• {duration} AltV:** `{price}` ⭐\n"
+                return result
+                
         elif style == "minimal_clean":
-            return f"""**Pricing**
-
-[0;31m 7 Days RageMP - {ragemp_7d}€[0m
-[0;31m 30 Days RageMP - {ragemp_30d}€[0m
-[0;31m 90 Days RageMP - {ragemp_90d}€[0m
-[0;36m 7 Days AltV - {altv_7d}€[0m
-[0;36m 30 Days AltV - {altv_30d}€[0m
-[0;36m 90 Days AltV - {altv_90d}€[0m"""
+                result = "**Pricing**\n\n"
+                if ragemp_prices:
+                    ragemp_line = "**RageMP:** " + " | ".join([f"{duration.replace(' Days', 'D')}: {price}" for duration, price in ragemp_prices.items()])
+                    result += ragemp_line + "\n"
+                if altv_prices:
+                    altv_line = "**AltV:** " + " | ".join([f"{duration.replace(' Days', 'D')}: {price}" for duration, price in altv_prices.items()])
+                    result += altv_line
+                return result
+                
         elif style == "gaming_style":
-            return f"""**🎮 GAMING PRICING 🎮**
-
-**🔥 RageMP Packages:**
-┌─────────────────────────┐
-│ 7 Days  │ {ragemp_7d}€  │ 💰 │
-│ 30 Days │ {ragemp_30d}€  │ 💰 │
-│ 90 Days │ {ragemp_90d}€ │ 💰 │
-└─────────────────────────┘
-
-**⚡ AltV Packages:**
-┌─────────────────────────┐
-│ 7 Days  │ {altv_7d}€  │ 💰 │
-│ 30 Days │ {altv_30d}€  │ 💰 │
-│ 90 Days │ {altv_90d}€ │ 💰 │
-└─────────────────────────┘"""
+                result = "**🎮 GAMING PRICING 🎮**\n\n"
+                if ragemp_prices:
+                    result += "**🔥 RageMP Packages:**\n"
+                    result += "┌─────────────────────────┐\n"
+                    for duration, price in ragemp_prices.items():
+                        result += f"│ {duration:<8} │ {price:<8} │ 💰 │\n"
+                    result += "└─────────────────────────┘\n\n"
+                if altv_prices:
+                    result += "**⚡ AltV Packages:**\n"
+                    result += "┌─────────────────────────┐\n"
+                    for duration, price in altv_prices.items():
+                        result += f"│ {duration:<8} │ {price:<8} │ 💰 │\n"
+                    result += "└─────────────────────────┘"
+                return result
+                
         elif style == "luxury_format":
-            return f"""**💎 LUXURY PRICING 💎**
-
-**🎯 RageMP Options:**
-┌─────────────────────────┐
-│ 7 Days  │ {ragemp_7d}€  │ 💰 │
-│ 30 Days │ {ragemp_30d}€  │ 💰 │
-│ 90 Days │ {ragemp_90d}€ │ 💰 │
-└─────────────────────────┘
-
-**AltV Packages:**
-┌─────────────────────────┐
-│ 7 Days  │ {altv_7d}€  │ 💰 │
-│ 30 Days │ {altv_30d}€  │ 💰 │
-│ 90 Days │ {altv_90d}€ │ 💰 │
-└─────────────────────────┘"""
+                result = "**💎 LUXURY PRICING 💎**\n\n"
+                if ragemp_prices:
+                    result += "**🎯 RageMP Options:**\n"
+                    result += "┌─────────────────────────┐\n"
+                    for duration, price in ragemp_prices.items():
+                        result += f"│ {duration:<8} │ {price:<8} │ 💰 │\n"
+                    result += "└─────────────────────────┘\n\n"
+                if altv_prices:
+                    result += "**AltV Packages:**\n"
+                    result += "┌─────────────────────────┐\n"
+                    for duration, price in altv_prices.items():
+                        result += f"│ {duration:<8} │ {price:<8} │ 💰 │\n"
+                    result += "└─────────────────────────┘"
+                return result
         else:
-            return f"RageMP: {ragemp_7d}€, {ragemp_30d}€, {ragemp_90d}€ | AltV: {altv_7d}€, {altv_30d}€, {altv_90d}€"
+                # Fallback format
+                result = ""
+                if ragemp_prices:
+                    result += "**RageMP:** " + ", ".join([f"{duration}: {price}" for duration, price in ragemp_prices.items()])
+                if ragemp_prices and altv_prices:
+                    result += " | "
+                if altv_prices:
+                    result += "**AltV:** " + ", ".join([f"{duration}: {price}" for duration, price in altv_prices.items()])
+                return result
+        
+        formatted_pricing = create_dynamic_pricing(format_style, ragemp_prices, altv_prices)
     
-    # Generate dynamic formatted pricing
-    dynamic_formatted_pricing = create_formatted_pricing(format_style, ragemp_7d, ragemp_30d, ragemp_90d, altv_7d, altv_30d, altv_90d)
-    
+    # Create pricing structure for duration-based pricing
+    if pricing_type == "custom":
+        pricing = {}
+    else:
+        pricing = {}
+        if ragemp_7d is not None or ragemp_14d is not None or ragemp_30d is not None or ragemp_90d is not None:
+            pricing['RageMP'] = {}
+            if ragemp_7d is not None:
+                pricing['RageMP']['7 Days'] = f'{ragemp_7d}€'
+            if ragemp_14d is not None:
+                pricing['RageMP']['14 Days'] = f'{ragemp_14d}€'
+            if ragemp_30d is not None:
+                pricing['RageMP']['30 Days'] = f'{ragemp_30d}€'
+            if ragemp_90d is not None:
+                pricing['RageMP']['90 Days'] = f'{ragemp_90d}€'
+        
+        if altv_7d is not None or altv_14d is not None or altv_30d is not None or altv_90d is not None:
+            pricing['AltV'] = {}
+            if altv_7d is not None:
+                pricing['AltV']['7 Days'] = f'{altv_7d}€'
+            if altv_14d is not None:
+                pricing['AltV']['14 Days'] = f'{altv_14d}€'
+            if altv_30d is not None:
+                pricing['AltV']['30 Days'] = f'{altv_30d}€'
+            if altv_90d is not None:
+                pricing['AltV']['90 Days'] = f'{altv_90d}€'
+
     template_data = {
         'name': name,
         'title': title,
         'subtitle': "Premium Product",
         'features': features,
-        'pricing': {
-            'RageMP': {
-                '7 Days': f'{ragemp_7d}€',
-                '30 Days': f'{ragemp_30d}€', 
-                '90 Days': f'{ragemp_90d}€'
-            },
-            'AltV': {
-                '7 Days': f'{altv_7d}€',
-                '30 Days': f'{altv_30d}€',
-                '90 Days': f'{altv_90d}€'
-            }
-        },
+        'pricing': pricing,
+        'pricing_type': pricing_type,
+        'custom_pricing': custom_pricing if pricing_type == "custom" else None,
         'color': CONFIG['MAIN_COLOR'],
         'banner_url': CONFIG['BANNER_IMAGE'],
         'footer_text': "NorthernHub • Premium Trusted Service",
         'created_by': interaction.user.id,
         'created_at': datetime.now().isoformat(),
         'format_style': format_style,
-        'formatted_pricing': dynamic_formatted_pricing,
-        'formatted_text': selected_format['main_text']
+        'formatted_pricing': formatted_pricing
     }
     
     # Save to data manager
@@ -3939,7 +4163,7 @@ async def create_formatted_template(
     # Add formatted pricing (this replaces the standard pricing)
     preview_embed.add_field(
         name="**Pricing**",
-        value=template_data['formatted_pricing'],
+        value=formatted_pricing,
         inline=False
     )
     
