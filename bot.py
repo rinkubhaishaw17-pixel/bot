@@ -2746,7 +2746,7 @@ async def vouch_info(interaction: discord.Interaction):
     
     embed.set_footer(text="Use /set_vouch_channel to manually set a specific channel")
     
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)        
 
 class EnhancedVouchModal(discord.ui.Modal):  # ✅ Correct class definition
     def __init__(self, prefilled_product=None):  # ✅ Define __init__ method
@@ -3995,7 +3995,7 @@ async def create_formatted_template(
         
         # Create dynamic formatted pricing based on provided durations
         def create_dynamic_pricing(style, ragemp_prices, altv_prices):
-        if style == "premium_code":
+            if style == "premium_code":
                 result = "```ansi\n"
                 if ragemp_prices:
                     result += "[0;31m┌─ RageMP Pricing ─────────────────┐[0m\n"
@@ -4010,7 +4010,7 @@ async def create_formatted_template(
                 result += "```"
                 return result
                 
-        elif style == "elegant_quote":
+            elif style == "elegant_quote":
                 result = ">>> **💳 Pricing Information**\n> \n"
                 if ragemp_prices:
                     result += "> **RageMP Options:**\n"
@@ -4023,7 +4023,7 @@ async def create_formatted_template(
                         result += f"> `{duration:<8}` → **{price}** 💰\n"
                 return result
                 
-        elif style == "bold_arrows":
+            elif style == "bold_arrows":
                 result = "**__💰 PRICING INFORMATION__**\n\n"
                 if ragemp_prices:
                     result += "**🎯 RageMP Options:**\n"
@@ -4036,7 +4036,7 @@ async def create_formatted_template(
                         result += f"**• {duration} AltV:** `{price}` ⭐\n"
                 return result
                 
-        elif style == "minimal_clean":
+            elif style == "minimal_clean":
                 result = "**Pricing**\n\n"
                 if ragemp_prices:
                     ragemp_line = "**RageMP:** " + " | ".join([f"{duration.replace(' Days', 'D')}: {price}" for duration, price in ragemp_prices.items()])
@@ -4046,7 +4046,7 @@ async def create_formatted_template(
                     result += altv_line
                 return result
                 
-        elif style == "gaming_style":
+            elif style == "gaming_style":
                 result = "**🎮 GAMING PRICING 🎮**\n\n"
                 if ragemp_prices:
                     result += "**🔥 RageMP Packages:**\n"
@@ -4062,7 +4062,7 @@ async def create_formatted_template(
                     result += "└─────────────────────────┘"
                 return result
                 
-        elif style == "luxury_format":
+            elif style == "luxury_format":
                 result = "**💎 LUXURY PRICING 💎**\n\n"
                 if ragemp_prices:
                     result += "**🎯 RageMP Options:**\n"
@@ -4077,7 +4077,7 @@ async def create_formatted_template(
                         result += f"│ {duration:<8} │ {price:<8} │ 💰 │\n"
                     result += "└─────────────────────────┘"
                 return result
-        else:
+            else:
                 # Fallback format
                 result = ""
                 if ragemp_prices:
@@ -4116,7 +4116,7 @@ async def create_formatted_template(
                 pricing['AltV']['30 Days'] = f'{altv_30d}€'
             if altv_90d is not None:
                 pricing['AltV']['90 Days'] = f'{altv_90d}€'
-
+    
     template_data = {
         'name': name,
         'title': title,
